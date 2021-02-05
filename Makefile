@@ -24,7 +24,7 @@ uninstall:
 	cd release; $(MAKE) uninstall
 debug:
 	mkdir -p debug
-	cd debug; cmake $(cmake_args) -DCMAKE_BUILD_TYPE=Debug ..
+	cd debug; cmake $(cmake_args) -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=1 ..
 	cd debug; $(MAKE)
 test:
 	mkdir -p debug
