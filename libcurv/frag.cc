@@ -40,6 +40,10 @@ void export_frag_2d(
             << opts.bg_.z << ");\n"
         "#ifdef GLSLVIEWER\n"
         "uniform mat3 u_view2d;\n"
+        "#ifdef MULTIPASS_RENDER\n"
+        "uniform sampler2D fp;\n"
+        "in vec2 v_texcoord;\n"
+        "#endif\n"
         "#endif\n";
 
     glsl_function_export(shape, out);
@@ -106,7 +110,12 @@ void export_frag_2d(
         "    col /= float(AA*AA*TAA);\n"
         "#endif\n"
         "    // convert linear RGB to sRGB\n"
+        "#if defined(GLSLVIEWER) && defined(MULTIPASS_RENDER)\n"
+        "    float spColor = vec4(pow(col, vec3(0.454545454545454545)),1.0);\n"
+        "    fragColour = mix(texture(fp, v_texcoord), spColor, 0.2);\n"
+        "#else\n"
         "    fragColour = vec4(pow(col, vec3(0.454545454545454545)),1.0);\n"
+        "#endif\n"
         "}\n"
         ;
 }
@@ -141,6 +150,10 @@ void export_frag_3d(
         "uniform vec3 u_eye3d;\n"
         "uniform vec3 u_centre3d;\n"
         "uniform vec3 u_up3d;\n"
+        "#ifdef MULTIPASS_RENDER\n"
+        "uniform sampler2D fp;\n"
+        "in vec2 v_texcoord;\n"
+        "#endif\n"
         "#endif\n";
 
     glsl_function_export(shape, out);
@@ -444,7 +457,6 @@ void export_frag_3d(
        "{\n"
        "    return normalize(camera * vec3(pos, lens));\n"
        "}\n"
-
        "void mainImage( out vec4 fragColour, in vec2 fragCoord )\n"
        "{\n"
        "    vec3 col = vec3(0.0);\n"
@@ -494,7 +506,12 @@ void export_frag_3d(
        "\n"
        "    // convert linear RGB to sRGB\n"
        "    col = pow(col, vec3(0.454545454545454545));\n"
+       "#if defined(GLSLVIEWER) && defined(MULTIPASS_RENDER)\n"
+       "    vec4 fpColour = texture(fp, v_texcoord);\n"
+       "    fragColour = mix(vec4(col,1.0),fpColour, 0.5);\n"
+       "#else\n"
        "    fragColour = vec4(col,1.0);\n"
+       "#endif\n"
        "}\n"
        ;
 }

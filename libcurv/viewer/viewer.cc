@@ -86,6 +86,24 @@ Viewer::set_shape(Viewed_Shape shape)
         shader_.detach(GL_FRAGMENT_SHADER | GL_VERTEX_SHADER);
         if (!shader_.load(shape_.frag_, vertSource_, config_.verbose_))
             error_ = true;
+#ifdef MULTIPASS_RENDER
+        //Find bbox_min, bbox_max definition statements.
+        std::string bbox;
+        std::istringstream iss(shape_.frag_);
+        for (std::string line; std::getline(iss, line); )
+        {
+            if (line.find("const vec3 bbox_min") != std::string::npos
+               || line.find("const vec3 bbox_max") != std::string::npos) {
+                bbox += line + "\n";
+            }
+        }
+        fpShader_.detach(GL_FRAGMENT_SHADER | GL_VERTEX_SHADER);
+        if (!fpShader_.load(fpVbo_->getVertexLayout()->getDefaultFragShader(),
+                            fpVbo_->getVertexLayout()->getDefaultFPVertShader(bbox),
+                            config_.verbose_))
+            error_ = true;
+
+#endif
         fps_.reset();
     }
 }
@@ -310,6 +328,45 @@ void Viewer::setup()
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     fps_.reset();
+#ifdef MULTIPASS_RENDER
+// Gen mesh.
+    Mesh mesh;
+    mesh.addVertex(glm::vec3(-1.0, -1.0, 1.0));
+    mesh.addColor(glm::vec4(1.0, 0.3, 0.3, 1.0));
+    mesh.addVertex(glm::vec3(1.0, -1.0, 1.0));
+    mesh.addColor(glm::vec4(0.3, 0.3, 1.0, 1.0));
+    mesh.addVertex(glm::vec3(1.0, 1.0, 1.0));
+    mesh.addColor(glm::vec4(0.3, 1.0, 0.3, 1.0));
+    mesh.addVertex(glm::vec3(-1.0, 1.0, 1.0));
+    mesh.addColor(glm::vec4(1.0, 1.0, 1.0, 1.0));
+    mesh.addIndex(0);   mesh.addIndex(1);   mesh.addIndex(3);
+    mesh.addIndex(1);   mesh.addIndex(2);   mesh.addIndex(3);
+
+
+    //Find bbox_min, bbox_max definition statements.
+    std::string bbox;
+    std::istringstream iss(shape_.frag_);
+    for (std::string line; std::getline(iss, line); )
+    {
+        if (line.find("const vec3 bbox_min") != std::string::npos
+           || line.find("const vec3 bbox_max") != std::string::npos) {
+            bbox += line + "\n";
+        }
+    }
+    fpVbo_ = mesh.getVbo();
+    if (!fpShader_.load(fpVbo_->getVertexLayout()->getDefaultFragShader(),
+                        fpVbo_->getVertexLayout()->getDefaultFPVertShader(bbox),
+                        config_.verbose_))
+        error_ = true;
+    glGenTextures(1, &fpTex_);
+    glBindTexture(GL_TEXTURE_2D, fpTex_);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, getWindowWidth(), getWindowHeight(), 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glGenFramebuffers(1, &fpFbo_);
+    glBindFramebuffer(GL_FRAMEBUFFER, fpFbo_);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fpTex_, 0);
+#endif
 }
 
 void Viewer::render()
@@ -318,11 +375,45 @@ void Viewer::render()
 
     if (!error_) ImGui::Render();
 
+#ifdef MULTIPASS_RENDER
+    if (!error_) {
+//First pass for drawing rays.
+//Bind first pass buffers.
+         glBindFramebuffer(GL_FRAMEBUFFER, fpFbo_);
+        // Prepare viewport
+        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+//Load uniforms
+        fpShader_.use();
+        fpShader_.setUniform("u_resolution", getWindowWidth(), getWindowHeight());
+        if (shader_.needTime()) {
+            shader_.setUniform("u_time", float(current_time_));
+        }
+        if (fpShader_.needView2d()) {
+            fpShader_.setUniform("u_view2d", u_view2d_);
+        }
+        if (fpShader_.needView3d()) {
+            fpShader_.setUniform("u_eye3d", u_eye3d_);
+            fpShader_.setUniform("u_centre3d", u_centre3d_);
+            fpShader_.setUniform("u_up3d", u_up3d_);
+        }
+        glm::mat4 mvp = glm::mat4(1.);
+        fpShader_.setUniform("u_modelViewProjectionMatrix", mvp);
+        fpVbo_->draw(&fpShader_);
+//Bind texture to second pass buffers.
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+#endif
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     if (!error_) {
         shader_.use();
-
+#ifdef MULTIPASS_RENDER
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, fpTex_);
+        glUniform1i(glGetUniformLocation(shader_.getProgram(), "fp"), 0);
+#endif
         // Pass uniforms
         shader_.setUniform("u_resolution", getWindowWidth(), getWindowHeight());
         if (shader_.needTime()) {
@@ -467,6 +558,9 @@ void Viewer::onExit()
     closeGL();
 
     // DELETE RESOURCES
+#ifdef MULTIPASS_RENDER
+    delete fpVbo_;
+#endif
     delete vbo_;
 }
 
@@ -738,6 +832,9 @@ void Viewer::swap_buffers()
 
 void Viewer::closeGL()
 {
+#ifdef MULTIPASS_RENDER
+//Delete textures?
+#endif
     //glfwSetWindowShouldClose(window_, GL_TRUE);
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
@@ -753,6 +850,10 @@ void Viewer::setWindowSize(int _width, int _height)
     viewport_.y = _height;
     fPixelDensity_ = getPixelDensity();
     glViewport(0.0, 0.0, (float)getWindowWidth(), (float)getWindowHeight());
+#ifdef MULTIPASS_RENDER
+//Resize first pass texture.
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, _width, _height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+#endif
 }
 
 float Viewer::getPixelDensity()

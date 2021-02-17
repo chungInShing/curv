@@ -51,27 +51,32 @@ bool Shader::load(const std::string& _fragmentSrc, const std::string& _vertexSrc
 
     m_vertexShader = compileShader(_vertexSrc, GL_VERTEX_SHADER, _verbose);
 
-    if(!m_vertexShader) {
-        return false;
-    }
-
     m_fragmentShader = compileShader(_fragmentSrc, GL_FRAGMENT_SHADER, _verbose);
 
-    if(!m_fragmentShader) {
+    if(!m_fragmentShader || !m_vertexShader) {
         return false;
     } else {
-        m_backbuffer = find_id(_fragmentSrc, "u_backbuffer");
+        m_backbuffer = find_id(_fragmentSrc, "u_backbuffer")
+               || find_id(_vertexSrc, "u_backbuffer");
         if (!m_time)
-            m_time = find_id(_fragmentSrc, "u_time");
+            m_time = find_id(_fragmentSrc, "u_time")
+               || find_id(_vertexSrc, "u_time");
         if (!m_delta)
-            m_delta = find_id(_fragmentSrc, "u_delta");
+            m_delta = find_id(_fragmentSrc, "u_delta")
+               || find_id(_vertexSrc, "u_delta");
         if (!m_date)
-            m_date = find_id(_fragmentSrc, "u_date");
-        m_mouse = find_id(_fragmentSrc, "u_mouse");
-        m_view2d = find_id(_fragmentSrc, "u_view2d");
+            m_date = find_id(_fragmentSrc, "u_date")
+               || find_id(_vertexSrc, "u_date");
+        m_mouse = find_id(_fragmentSrc, "u_mouse")
+            || find_id(_vertexSrc, "u_mouse");
+        m_view2d = find_id(_fragmentSrc, "u_view2d")
+            || find_id(_vertexSrc, "u_view2d");
         m_view3d = (find_id(_fragmentSrc, "u_eye3d")
             || find_id(_fragmentSrc, "u_centre3d")
-            || find_id(_fragmentSrc, "u_up3d"));
+            || find_id(_fragmentSrc, "u_up3d")
+            || find_id(_vertexSrc, "u_eye3d")
+            || find_id(_vertexSrc, "u_centre3d")
+            || find_id(_vertexSrc, "u_up3d"));
     }
 
     m_program = glCreateProgram();
@@ -153,6 +158,9 @@ GLuint Shader::compileShader(
 
     prolog += curv::geom::glsl_version;
     prolog += "\n#define GLSLVIEWER 1\n";
+#ifdef MULTIPASS_RENDER
+    prolog += "\n#define MULTIPASS_RENDER 1\n";
+#endif
 
     // Test if this is a shadertoy.com image shader. If it is, we need to
     // define some uniforms with different names than the glslViewer standard,

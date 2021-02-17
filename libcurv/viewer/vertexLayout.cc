@@ -1,5 +1,6 @@
 #include "vertexLayout.h"
 #include "text.h"
+#include <libcurv/dtostr.h>
 
 std::map<GLint, GLuint> VertexLayout::s_enabledAttribs = std::map<GLint, GLuint>();
 
@@ -75,6 +76,129 @@ void VertexLayout::enable(const Shader* _program) {
     }
 }
 
+#ifdef MULTIPASS_RENDER
+
+std::string VertexLayout::getDefaultFPVertShader(std::string bbox) {
+    std::string rta =
+"#ifdef GL_ES\n"
+"precision mediump float;\n"
+"#endif\n"
+"\n"
+"uniform mat4 u_modelViewProjectionMatrix;\n"
+"uniform mat4 u_modelMatrix;\n"
+"uniform mat4 u_viewMatrix;\n"
+"uniform mat4 u_projectionMatrix;\n"
+"uniform mat4 u_normalMatrix;\n"
+"\n"
+"uniform float u_time;\n"
+"uniform vec2 u_mouse;\n"
+"uniform vec2 u_resolution;\n"
+"\n"
+"uniform vec3 u_eye3d;\n"
+"uniform vec3 u_centre3d;\n"
+"uniform vec3 u_up3d;\n"
+"\n"
+"#define iResolution vec3(u_resolution, 1.0)\n"
+"\n";
+
+    for (unsigned int i = 0; i < m_attribs.size(); i++) {
+        int size = m_attribs[i].size;
+        if (m_positionAttribIndex == int(i)) {
+            size = 4;
+        }
+        rta += "in vec" + toString(size) + " a_" + m_attribs[i].name + ";\n";
+        rta += "out vec" + toString(size) + " v_" + m_attribs[i].name + ";\n";
+    }
+
+    rta += "\n"
+           "// * `eye` is the position of the camera.\n"
+           "// * `centre` is the position to look towards.\n"
+           "// * `up` is the 'up' direction.\n"
+           "mat4 look_at(vec3 eye, vec3 centre, vec3 up)\n"
+           "{\n"
+           "    mat4 camMat;\n"
+           "    vec3 ww = normalize(eye - centre);\n"
+           "    vec3 uu = normalize(cross(up, ww));\n"
+           "    vec3 vv = normalize(cross(ww, uu));\n"
+           "    float du = dot(uu, -eye);\n"
+           "    float dv = dot(vv, -eye);\n"
+           "    float dw = dot(ww, -eye);\n"
+           "    camMat[0][0] = uu.x;\n"
+           "    camMat[0][1] = vv.x;\n"
+           "    camMat[0][2] = ww.x;\n"
+           "    camMat[0][3] = 0.0;\n"
+           "    camMat[1][0] = uu.y;\n"
+           "    camMat[1][1] = vv.y;\n"
+           "    camMat[1][2] = ww.y;\n"
+           "    camMat[1][3] = 0.0;\n"
+           "    camMat[2][0] = uu.z;\n"
+           "    camMat[2][1] = vv.z;\n"
+           "    camMat[2][2] = ww.z;\n"
+           "    camMat[2][3] = 0.0;\n"
+           "    camMat[3][0] = du;\n"
+           "    camMat[3][1] = dv;\n"
+           "    camMat[3][2] = dw;\n"
+           "    camMat[3][3] = 1.0;\n"
+           "    return camMat;\n"
+           "}\n";
+
+    rta += "\n"
+           "mat4 proj(float left, float right, float top, float bottom,\n"
+           "          float n, float f)\n"
+           "{\n"
+           "    mat4 projMat;\n"
+           "    projMat[0][0] = 2.0 * n / (right - left);\n"
+           "    projMat[0][1] = 0.0;\n"
+           "    projMat[0][2] = 0.0;\n"
+           "    projMat[0][3] = 0.0;\n"
+           "    projMat[1][0] = 0.0;\n"
+           "    projMat[1][1] = 2.0 * n / (top - bottom);\n"
+           "    projMat[1][2] = 0.0;\n"
+           "    projMat[1][3] = 0.0;\n"
+           "    projMat[2][0] = (right + left) / (right - left);\n"
+           "    projMat[2][1] = (top + bottom) / (top - bottom);\n"
+           "    projMat[2][2] = -(f + n) / (f - n);\n"
+           "    projMat[2][3] = -1.0;\n"
+           "    projMat[3][0] = 0.0;\n"
+           "    projMat[3][1] = 0.0;\n"
+           "    projMat[3][2] = - 2.0 * f * n / (f - n);\n"
+           "    projMat[3][3] = 0.0;\n"
+           "    return projMat;\n"
+           "}\n";
+
+    rta += "\n"
+"void main(void) {\n"
+"\n";
+
+    for (unsigned int i = 0; i < m_attribs.size(); i++) {
+        rta += "    v_" + m_attribs[i].name + " = a_" + m_attribs[i].name + ";\n";
+    }
+
+    rta += bbox;
+
+    rta += "\n"
+           "  float ar = iResolution.y/iResolution.x;\n"
+           "  const vec3 origin = (bbox_min + bbox_max) / 2.0;\n"
+           "  const vec3 radius = (bbox_max - bbox_min) / 2.0;\n"
+           "  float r = max(radius.x, max(radius.y, radius.z)) / 1.3;\n"
+           "  vec3 eye = vec3(u_eye3d.x, -u_eye3d.z, u_eye3d.y)*r + origin;\n"
+           "  vec3 centre = vec3(u_centre3d.x, -u_centre3d.z, u_centre3d.y)*r + origin;\n"
+           "  vec3 up = vec3(u_up3d.x, -u_up3d.z, u_up3d.y);\n"
+           "  mat4 camera = look_at(eye, centre, up);\n"
+           "  mat4 projMat = proj(-1.0, 1.0, 1.0 * ar, -1.0 * ar, 2.5, 100);\n"
+           "\n";
+
+    if (m_positionAttribIndex != -1 && m_positionAttribIndex < int(m_attribs.size())) {
+        rta += "    gl_Position = projMat * camera * v_" + m_attribs[m_positionAttribIndex].name + ";\n";
+    }
+
+    rta +=  "}\n";
+
+    return rta;
+}
+
+#endif
+
 std::string VertexLayout::getDefaultVertShader() {
     std::string rta =
 "#ifdef GL_ES\n"
@@ -140,7 +264,7 @@ std::string VertexLayout::getDefaultFragShader() {
         if (m_positionAttribIndex == int(i)) {
             size = 4;
         }
-        rta += "out vec" + toString(size) + " v_" + m_attribs[i].name + ";\n";
+        rta += "in vec" + toString(size) + " v_" + m_attribs[i].name + ";\n";
     }
 
     rta += "\n"

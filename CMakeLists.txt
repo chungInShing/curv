@@ -10,6 +10,7 @@ execute_process(COMMAND sh -c "${CMAKE_SOURCE_DIR}/cmake/make_version.sh"
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
+set(multipass "-DMULTIPASS_RENDER=1")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
 
 # Configure global include directories, visible in subdirectories.
@@ -142,9 +143,9 @@ target_link_libraries(tester PUBLIC gtest pthread libcurv libcurv_geom double-co
 set_property(TARGET curv curvc libcurv libcurv_geom tester PROPERTY CXX_STANDARD 14)
 
 set(gccflags "-Wall -Wno-unused-result" )
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${gccflags}" )
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${gccflags}" )
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${sanitize} -O1" )
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${gccflags} ${multipass}" )
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${gccflags} ${multipass}" )
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${multipass} ${sanitize} -O1" )
 
 add_custom_target(tests tester WORKING_DIRECTORY ../tests)
 add_dependencies(tests tester curv)

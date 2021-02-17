@@ -14,6 +14,9 @@
 #include <libcurv/viewed_shape.h>
 #include "shader.h"
 #include "vbo.h"
+#ifdef MULTIPASS_RENDER
+//#include "fbo.h"
+#endif
 #include <glm/glm.hpp>
 
 namespace curv {
@@ -69,7 +72,12 @@ struct Viewer
     bool headless_{false};
 
     /*--- INTERNAL STATE ---*/
-
+#ifdef MULTIPASS_RENDER
+    Vbo* fpVbo_ = nullptr;
+    GLuint fpTex_;
+    GLuint fpFbo_;
+    Shader fpShader_{};
+#endif
     Viewed_Shape shape_{};
     Shader shader_{};
     std::string vertSource_{};

@@ -34,6 +34,9 @@ public:
 
     GLint       getStride() const { return m_stride; };
 
+#ifdef MULTIPASS_RENDER
+    std::string getDefaultFPVertShader(std::string bbox);
+#endif
     std::string getDefaultVertShader();
     std::string getDefaultFragShader();
 
