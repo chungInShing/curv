@@ -925,8 +925,27 @@ void For_Op::sc_exec(SC_Frame& f) const
 SC_Value sc_vec_element(SC_Frame& f, SC_Value vec, int i)
 {
     SC_Value r = f.sc_.newvalue(vec.type.elem_type());
-    f.sc_.out() << "  " << r.type << " " << r << " = "
-        << vec << "[" << i << "];\n";
+
+    if (f.sc_.target_ == SC_Target::glsl && vec.type.is_num_vec()) {
+        //use gl_index_letters instread of indices if num vec types are used.
+        const char* arg2 = nullptr;
+        if (i == 0.0)
+            arg2 = ".x";
+        else if (i == 1.0)
+            arg2 = ".y";
+        else if (i == 2.0 && vec.type.count() > 2)
+            arg2 = ".z";
+        else if (i == 3.0 && vec.type.count() > 3)
+            arg2 = ".w";
+        if (arg2 == nullptr)
+            return r;
+
+        f.sc_.out() << "  " << r.type << " " << r << " = "
+            << vec << arg2 << ";\n";
+    } else {
+        f.sc_.out() << "  " << r.type << " " << r << " = "
+            << vec << "[" << i << "];\n";
+    }
     return r;
 }
 

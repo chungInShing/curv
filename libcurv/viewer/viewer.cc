@@ -31,6 +31,10 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 
+#ifdef CALC_RAY
+#include "calc_rays.h"
+#endif
+
 namespace curv { namespace viewer {
 
 Viewer::Viewer()
@@ -46,12 +50,21 @@ Viewer::Viewer(const Viewer_Config& config)
 void
 Viewer::set_shape_no_hud(const Shape_Program& shape, const Render_Opts& opts)
 {
+#ifdef CALC_RAY
+    set_shape(Traced_Shape(shape, opts));
+#else
     set_shape(Viewed_Shape(shape, opts));
+#endif
     hud_ = false;
 }
 
+#ifdef CALC_RAY
+void
+Viewer::set_shape(Traced_Shape shape)
+#else
 void
 Viewer::set_shape(Viewed_Shape shape)
+#endif
 {
     // preserve picker state
     if (!shape_.param_.empty()) {
@@ -86,8 +99,50 @@ Viewer::set_shape(Viewed_Shape shape)
         shader_.detach(GL_FRAGMENT_SHADER | GL_VERTEX_SHADER);
         if (!shader_.load(shape_.frag_, vertSource_, config_.verbose_))
             error_ = true;
+
+#ifdef CALC_RAY
+        RayCalcRetCode res = rayCalc_.compileProgram(shape_);
+        if (res != RayCalcRetCode::OK) {
+            std::cout << "Error compiling OpenCL code." << std::endl;
+            die("Death because of error compiling OpenCL code.");
+        }
+#endif
+
 #ifdef MULTIPASS_RENDER
-        //Find bbox_min, bbox_max definition statements.
+#ifdef CALC_RAY
+    Mesh mesh;
+    if (rayCalc_.isInit())
+    {
+        //Input viewer uniforms.
+        //Input parameters.
+        RayCalcRetCode res = rayCalc_.setParameters(shape_);
+        if (res != RayCalcRetCode::OK) {
+            std::cout << "Error compiling OpenCL code." << std::endl;
+            die("Death because of error compiling OpenCL code.");
+        }
+        //Input condition parameters.
+        //Calculate rays.
+        RayCalcResult result = rayCalc_.calculate(shape_);
+        //Convert rays to lines.
+        //std::cout << "Drawing lines...." << std::endl;
+        mesh.setDrawMode(GL_LINES);
+        for (auto r : result.rays) {
+            //std::cout << "Line: (" << std::to_string(r.pos.x)
+            //          << ", " << std::to_string(r.pos.y)
+            //          << ", " << std::to_string(r.pos.z)
+            //          << ") -> (" << std::to_string((r.pos + r.dir).x)
+            //          << ", " << std::to_string((r.pos + r.dir).y)
+            //          << ", " << std::to_string((r.pos + r.dir).z)
+            //          << ")" << std::endl;
+            mesh.addVertex(r.pos);
+            mesh.addVertex(r.pos + r.dir);
+            mesh.addColor(glm::vec4(1.0, 1.0, 1.0, 1.0));
+            mesh.addColor(glm::vec4(1.0, 1.0, 1.0, 1.0));
+        }
+    }
+    fpVbo_ = mesh.getVbo();
+#endif
+       //Find bbox_min, bbox_max definition statements.
         std::string bbox;
         std::istringstream iss(shape_.frag_);
         for (std::string line; std::getline(iss, line); )
@@ -118,6 +173,15 @@ Viewer::run()
 
 void Viewer::open()
 {
+#ifdef CALC_RAY
+//Initialize ray calculator.
+    if (!rayCalc_.isInit())
+    {
+        rayCalc_.init();
+    }
+#endif
+
+
     if (!is_open()) {
         // Set initial default values for centre, eye and up
         reset_view(home);
@@ -294,6 +358,11 @@ void Viewer::close()
         glfwGetWindowSize(window_, &window_size_.x, &window_size_.y);
         onExit();
     }
+#ifdef CALC_RAY
+    if (rayCalc_.isInit()) {
+        rayCalc_.close();
+    }
+#endif
 }
 
 Viewer::~Viewer()
@@ -319,7 +388,6 @@ void Viewer::setup()
     vertSource_ = vbo_->getVertexLayout()->getDefaultVertShader();
     if (!shader_.load(shape_.frag_, vertSource_, config_.verbose_))
         error_ = true;
-
     // Turn on Alpha blending
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
@@ -328,20 +396,59 @@ void Viewer::setup()
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     fps_.reset();
+
+#ifdef CALC_RAY
+        RayCalcRetCode res = rayCalc_.compileProgram(shape_);
+        if (res != RayCalcRetCode::OK) {
+            std::cout << "Error compiling OpenCL code." << std::endl;
+            die("Death because of error compiling OpenCL code.");
+        }
+#endif
+
 #ifdef MULTIPASS_RENDER
 // Gen mesh.
     Mesh mesh;
-    mesh.addVertex(glm::vec3(-1.0, -1.0, 1.0));
-    mesh.addColor(glm::vec4(1.0, 0.3, 0.3, 1.0));
-    mesh.addVertex(glm::vec3(1.0, -1.0, 1.0));
-    mesh.addColor(glm::vec4(0.3, 0.3, 1.0, 1.0));
-    mesh.addVertex(glm::vec3(1.0, 1.0, 1.0));
-    mesh.addColor(glm::vec4(0.3, 1.0, 0.3, 1.0));
-    mesh.addVertex(glm::vec3(-1.0, 1.0, 1.0));
-    mesh.addColor(glm::vec4(1.0, 1.0, 1.0, 1.0));
-    mesh.addIndex(0);   mesh.addIndex(1);   mesh.addIndex(3);
-    mesh.addIndex(1);   mesh.addIndex(2);   mesh.addIndex(3);
-
+    //mesh.addVertex(glm::vec3(-1.0, -1.0, 1.0));
+    //mesh.addColor(glm::vec4(1.0, 0.3, 0.3, 1.0));
+    //mesh.addVertex(glm::vec3(1.0, -1.0, 1.0));
+    //mesh.addColor(glm::vec4(0.3, 0.3, 1.0, 1.0));
+    //mesh.addVertex(glm::vec3(1.0, 1.0, 1.0));
+    //mesh.addColor(glm::vec4(0.3, 1.0, 0.3, 1.0));
+    //mesh.addVertex(glm::vec3(-1.0, 1.0, 1.0));
+    //mesh.addColor(glm::vec4(1.0, 1.0, 1.0, 1.0));
+    //mesh.addIndex(0);   mesh.addIndex(1);   mesh.addIndex(3);
+    //mesh.addIndex(1);   mesh.addIndex(2);   mesh.addIndex(3);
+#ifdef CALC_RAY
+    if (rayCalc_.isInit())
+    {
+        //Input viewer uniforms.
+        //Input parameters.
+        RayCalcRetCode res = rayCalc_.setParameters(shape_);
+        if (res != RayCalcRetCode::OK) {
+            std::cout << "Error compiling OpenCL code." << std::endl;
+            die("Death because of error compiling OpenCL code.");
+        }
+        //Input condition parameters.
+        //Calculate rays.
+        RayCalcResult result = rayCalc_.calculate(shape_);
+        //Convert rays to lines.
+        //std::cout << "Drawing lines...." << std::endl;
+        mesh.setDrawMode(GL_LINES);
+        for (auto r : result.rays) {
+            //std::cout << "Line: (" << std::to_string(r.pos.x)
+            //          << ", " << std::to_string(r.pos.y)
+            //          << ", " << std::to_string(r.pos.z)
+            //          << ") -> (" << std::to_string((r.pos + r.dir).x)
+            //          << ", " << std::to_string((r.pos + r.dir).y)
+            //          << ", " << std::to_string((r.pos + r.dir).z)
+            //          << ")" << std::endl;
+            mesh.addVertex(r.pos);
+            mesh.addVertex(r.pos + r.dir);
+            mesh.addColor(glm::vec4(1.0, 1.0, 1.0, 1.0));
+            mesh.addColor(glm::vec4(1.0, 1.0, 1.0, 1.0));
+        }
+    }
+#endif
 
     //Find bbox_min, bbox_max definition statements.
     std::string bbox;
