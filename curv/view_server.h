@@ -35,7 +35,11 @@ private:
     Request request_;
     std::mutex request_mutex_;
     std::condition_variable request_condition_;
+#ifdef CALC_RAY
+    curv::Traced_Shape request_shape_;
+#else
     curv::Viewed_Shape request_shape_;
+#endif
     struct Message {
         View_Server& server_;
         std::unique_lock<std::mutex> lock_;
@@ -113,11 +117,19 @@ public:
         const curv::Shape_Program& shape,
         const curv::Render_Opts& opts)
     {
+#ifdef CALC_RAY
+        request_shape_ = curv::Traced_Shape(shape, opts);
+#else
         request_shape_ = curv::Viewed_Shape(shape, opts);
+#endif
         send(Request::k_display_shape);
         //assert(request_shape_.empty());
     }
+#ifdef CALC_RAY
+    void display_shape(curv::Traced_Shape vshape)
+#else
     void display_shape(curv::Viewed_Shape vshape)
+#endif
     {
         std::swap(request_shape_, vshape);
         send(Request::k_display_shape);

@@ -29,7 +29,7 @@ struct Render_Opts
     // background colour, defaults to white
     glm::dvec3 bg_ = glm::dvec3(1.0,1.0,1.0);
     // max # of iterations in the ray-marcher
-    int ray_max_iter_ = 200;
+    int ray_max_iter_ = 2000000;
     // max ray-marching distance
     double ray_max_depth_ = 400.0;
     // shader implementation

@@ -11,6 +11,8 @@ execute_process(COMMAND sh -c "${CMAKE_SOURCE_DIR}/cmake/make_version.sh"
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
 set(multipass "-DMULTIPASS_RENDER=1")
+set(calc_rays "-DCALC_RAY=1")
+set(opencl_target_version "-DCL_TARGET_OPENCL_VERSION=110")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
 
 # Configure global include directories, visible in subdirectories.
@@ -39,24 +41,28 @@ endif (APPLE)
 # Libraries
 # ===============================================
 
+# OpenCL library
+find_package( OpenCL REQUIRED )
+include_directories( ${OPENCL_INCLUDE_DIR} )
+
 # REPLxx library
 file(GLOB ReplxxSrc "extern/replxx/src/*.cxx" "extern/replxx/src/*.cpp")
 add_library(replxx ${ReplxxSrc})
 target_include_directories(replxx
    PUBLIC extern/replxx/include
    PRIVATE extern/replxx/src)
-set_property(TARGET replxx PROPERTY CXX_STANDARD 14)
+set_property(TARGET replxx PROPERTY CXX_STANDARD 17)
 target_compile_definitions(replxx PRIVATE REPLXX_STATIC=1)
 
 # double-conversion library
 file(GLOB DoubleConversionSrc "extern/double-conversion/double-conversion/*.cc")
 add_library(double-conversion ${DoubleConversionSrc})
-set_property(TARGET double-conversion PROPERTY CXX_STANDARD 14)
+set_property(TARGET double-conversion PROPERTY CXX_STANDARD 17)
 
 # glad library, an OpenGL loader
 add_library(glad
     extern/glad/glad/glad.c)
-set_property(TARGET glad PROPERTY CXX_STANDARD 14)
+set_property(TARGET glad PROPERTY CXX_STANDARD 17)
 
 # Dear IMGUI library
 add_library(imgui
@@ -71,7 +77,7 @@ target_include_directories(imgui
 target_link_libraries(imgui PUBLIC glfw glad)
 target_compile_definitions(imgui PUBLIC
     IMGUI_IMPL_OPENGL_LOADER_GLAD )
-set_property(TARGET imgui PROPERTY CXX_STANDARD 14)
+set_property(TARGET imgui PROPERTY CXX_STANDARD 17)
 
 # GL library (OpenGL or mesa or ...)
 if (APPLE)
@@ -105,7 +111,7 @@ find_package(Boost 1.65 REQUIRED COMPONENTS iostreams filesystem system)
 #target_include_directories(imdemo
 #    PUBLIC extern/imgui/examples/example_glfw_opengl3)
 #target_link_libraries(imdemo PUBLIC glfw glad imgui ${LibOpenGL})
-#set_property(TARGET imdemo PROPERTY CXX_STANDARD 14)
+#set_property(TARGET imdemo PROPERTY CXX_STANDARD 17)
 
 # Libraries End
 # ===============================================
@@ -124,7 +130,7 @@ file(GLOB Src "curv/*.c" "curv/*.cc")
 add_executable(curv ${Src})
 target_compile_definitions(curv PRIVATE REPLXX_STATIC=1)
 
-set(link_libraries_common_to_all_OS libcurv_geom libcurv imgui glfw glad ${LibOpenGL} replxx double-conversion Boost::iostreams Boost::filesystem Boost::system ${LibOpenVDB} Half tbb pthread)
+set(link_libraries_common_to_all_OS libcurv_geom libcurv imgui glfw glad ${LibOpenGL} replxx double-conversion Boost::iostreams Boost::filesystem Boost::system ${LibOpenVDB} Half tbb pthread OpenCL)
 
 if (MSYS)
     target_link_libraries(curv PUBLIC ${link_libraries_common_to_all_OS})
@@ -140,12 +146,12 @@ file(GLOB TestSrc "tests/*.cc")
 add_executable(tester EXCLUDE_FROM_ALL ${TestSrc})
 target_link_libraries(tester PUBLIC gtest pthread libcurv libcurv_geom double-conversion Boost::iostreams Boost::filesystem Boost::system)
 
-set_property(TARGET curv curvc libcurv libcurv_geom tester PROPERTY CXX_STANDARD 14)
+set_property(TARGET curv curvc libcurv libcurv_geom tester PROPERTY CXX_STANDARD 17)
 
 set(gccflags "-Wall -Wno-unused-result" )
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${gccflags} ${multipass}" )
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${gccflags} ${multipass}" )
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${multipass} ${sanitize} -O1" )
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${gccflags} ${multipass} ${calc_rays} ${opencl_target_version}" )
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${gccflags} ${multipass} ${calc_rays} ${opencl_target_version}" )
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${multipass} ${calc_rays} ${opencl_target_version} ${sanitize} -O1" )
 
 add_custom_target(tests tester WORKING_DIRECTORY ../tests)
 add_dependencies(tests tester curv)
