@@ -11,6 +11,12 @@
 #include <memory>
 #include <tuple>
 #include <iostream>
+
+
+#include <libcurv/context.h>
+#include <libcurv/function.h>
+#include <libcurv/sc_compiler.h>
+
 namespace curv {
 
 #ifdef OPENCL_TEST_KERNEL
@@ -189,12 +195,24 @@ static const char* DEFAULT_RAY_TRACE =
                     "}\n"
                     "\n";
 
+static const char* DEFAULT_RAY_INIT =
+                    "__kernel void init_main(__global float* i,\n" //The only variable to input to functions generating initial ray values.
+                    "                   __global float3* ro,\n" //Initial ray origin.
+                    "                   __global float3* rd,\n" //Initial ray direction.
+                    "                   __global float4* rc,\n" //Initial ray colour.
+                    "                   __global float* rind\n" //Initial ray index or reflection.
+                    "                   ) {\n"
+                    "}\n"
+                    "\n";
+
 //Required shader functions: dist, calcNormal, castRay, colour
 //Required shader constant: ray_max_iter, ray_max_depth
 //Ray trace -> Get normal -> Bound check -> Refraction -> Ray trace
+
 void export_clprog_2d(const Shape_Program& shape, const Render_Opts& opts, std::ostream& out);
 void export_clprog_3d(const Shape_Program& shape, const Render_Opts& opts, std::ostream& out);
-
+void export_rays_clprog_2d(const Rays_Program& rays, const Render_Opts& opts, std::ostream& out);
+void export_rays_clprog_3d(const Rays_Program& rays, const Render_Opts& opts, std::ostream& out);
 
 void export_clprog(const Shape_Program& shape, const Render_Opts& opts, std::ostream& out)
 {
@@ -204,6 +222,64 @@ void export_clprog(const Shape_Program& shape, const Render_Opts& opts, std::ost
         return export_clprog_3d(shape, opts, out);
     die("export_clprog: shape is not 2d or 3d");
 }
+
+void export_clprog(const Shape_Program& shape, const Rays_Program& rays, const Render_Opts& opts, std::ostream& out)
+{
+    export_clprog(shape, opts, out);
+//    if (rays.ray_is_2d_)
+//        return export_rays_clprog_2d(rays, opts, out);
+    if (rays.ray_is_3d_)
+        return export_rays_clprog_3d(rays, opts, out);
+    die("export_clprog: shape is not 2d or 3d");
+}
+
+void export_rays_clprog_3d(const Rays_Program& rays, const Render_Opts& opts, std::ostream& out)
+{
+#ifdef OPENCL_TEST_KERNEL
+    out << TEST_KERNEL;
+    return;
+#endif
+    out <<
+        DEFAULT_HEADER;
+
+    SC_Compiler sc(out, SC_Target::glsl, rays.system());
+    At_Program cx(rays);
+
+    out << glsl_header;
+    if (rays.traced_shape_) {
+        // output uniform variables for parametric shape
+        for (auto& p : rays.traced_shape_->param_) {
+            out << "uniform " << p.second.pconfig_.sctype_ << " "
+                << p.second.identifier_ << ";\n";
+        }
+    }
+    sc.define_function("rays_origin", SC_Type::Num(2), SC_Type::Num(3),
+        rays.rays_origin_fun_, cx);
+    sc.define_function("rays_direction", SC_Type::Num(2), SC_Type::Num(3),
+        rays.rays_direction_fun_, cx);
+    sc.define_function("rays_colour", SC_Type::Num(2), SC_Type::Num(3),
+        rays.rays_colour_fun_, cx);
+    sc.define_function("rays_index", SC_Type::Num(2), SC_Type::Num(),
+        rays.rays_index_fun_, cx);
+
+    BBox bbox = rays.bbox_;
+    if (bbox.empty2() || bbox.infinite2()) {
+        out <<
+        "const vec4 bbox = vec4(-10.0,-10.0,+10.0,+10.0);\n";
+    } else {
+        out << "const vec4 bbox = vec4("
+            << bbox.xmin << ","
+            << bbox.ymin << ","
+            << bbox.xmax << ","
+            << bbox.ymax
+            << ");\n";
+    }
+
+    //out <<
+    //    DEFAULT_RAY_INIT;
+
+}
+
 
 void export_clprog_2d(const Shape_Program& shape, const Render_Opts& opts, std::ostream& out)
 {
@@ -304,6 +380,13 @@ Traced_Shape::Traced_Shape(const Shape_Program& shape, const Render_Opts& opts) 
 
 }
 
+Traced_Shape::Traced_Shape(const Shape_Program& shape, const Rays_Program& rays, const Render_Opts& opts) : Viewed_Shape(shape, opts)
+{
+        std::stringstream clprog;
+        export_clprog(shape, rays, opts, clprog);
+        clprog_ = clprog.str();
+
+}
 
 uint Traced_Shape::getKernelVarIndex(const std::string &varName, const VarType type, const bool isArray)
 {

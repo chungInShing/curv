@@ -12,7 +12,6 @@
 
 #include <libcurv/render.h>
 #include <libcurv/viewed_shape.h>
-#include "libcurv/traced_shape.h"
 #include "shader.h"
 #include "vbo.h"
 #ifdef MULTIPASS_RENDER
@@ -21,6 +20,7 @@
 #ifdef CALC_RAY
 #include "calc_rays.h"
 #include <libcurv/traced_shape.h>
+#include <libcurv/rays.h>
 #endif
 #include <glm/glm.hpp>
 
@@ -45,10 +45,10 @@ struct Viewer
     // window, or while the window is open.
     void set_shape_no_hud(const Shape_Program&, const Render_Opts&);
 #ifdef CALC_RAY
-    void set_shape(Traced_Shape);
-#else
-    void set_shape(Viewed_Shape);
+    void set_shape_no_hud(const Shape_Program&, const Rays_Program&, const Render_Opts&);
+    void set_shape(Viewed_Shape, Traced_Shape);
 #endif
+    void set_shape(Viewed_Shape);
     bool is_open() { return window_ != nullptr; }
 
     // Reset camera to initial position.
@@ -88,10 +88,9 @@ struct Viewer
 #endif
 #ifdef CALC_RAY
     RayCalc rayCalc_;
-    Traced_Shape shape_{};
-#else
-    Viewed_Shape shape_{};
+    Traced_Shape tshape_{};
 #endif
+    Viewed_Shape shape_{};
     Shader shader_{};
     std::string vertSource_{};
     GLFWwindow* window_ = nullptr;

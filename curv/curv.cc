@@ -21,6 +21,9 @@ extern "C" {
 #include <libcurv/die.h>
 #include <libcurv/exception.h>
 #include <libcurv/gpu_program.h>
+#ifdef CALC_RAY
+#include <libcurv/traced_gpu_program.h>
+#endif
 #include <libcurv/output_file.h>
 #include <libcurv/progdir.h>
 #include <libcurv/program.h>
@@ -350,12 +353,21 @@ main(int argc, char** argv)
             exporter->second.call(value, prog, oparams, ofile);
             ofile.commit();
         } else {
+#ifdef CALC_RAY
+            curv::Traced_GPU_Program gpu_prog{prog};
+            if (gpu_prog.recognize(value, viewer_config)) {
+                print_shape(gpu_prog);
+                curv::viewer::Viewer viewer(viewer_config);
+                viewer.set_shape(std::move(gpu_prog.vshape_), std::move(gpu_prog.tshape_));
+                viewer.run();
+#else
             curv::GPU_Program gpu_prog{prog};
             if (gpu_prog.recognize(value, viewer_config)) {
                 print_shape(gpu_prog);
                 curv::viewer::Viewer viewer(viewer_config);
                 viewer.set_shape(std::move(gpu_prog.vshape_));
                 viewer.run();
+#endif
             } else {
                 std::cout << value << "\n";
             }

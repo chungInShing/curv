@@ -50,21 +50,21 @@ Viewer::Viewer(const Viewer_Config& config)
 void
 Viewer::set_shape_no_hud(const Shape_Program& shape, const Render_Opts& opts)
 {
-#ifdef CALC_RAY
-    set_shape(Traced_Shape(shape, opts));
-#else
     set_shape(Viewed_Shape(shape, opts));
-#endif
     hud_ = false;
 }
 
 #ifdef CALC_RAY
 void
-Viewer::set_shape(Traced_Shape shape)
-#else
+Viewer::set_shape_no_hud(const Shape_Program& shape, const Rays_Program& rays, const Render_Opts& opts)
+{
+    set_shape(Viewed_Shape(shape, opts), Traced_Shape(shape, rays, opts));
+    hud_ = false;
+}
+#endif
+
 void
 Viewer::set_shape(Viewed_Shape shape)
-#endif
 {
     // preserve picker state
     if (!shape_.param_.empty()) {
@@ -100,29 +100,40 @@ Viewer::set_shape(Viewed_Shape shape)
         if (!shader_.load(shape_.frag_, vertSource_, config_.verbose_))
             error_ = true;
 
-#ifdef CALC_RAY
-        RayCalcRetCode res = rayCalc_.compileProgram(shape_);
-        if (res != RayCalcRetCode::OK) {
-            std::cout << "Error compiling OpenCL code." << std::endl;
-            die("Death because of error compiling OpenCL code.");
-        }
-#endif
 
-#ifdef MULTIPASS_RENDER
+        fps_.reset();
+    }
+}
+
 #ifdef CALC_RAY
+void
+Viewer::set_shape(Viewed_Shape shape, Traced_Shape tshape)
+{
+    set_shape(shape);
+    tshape_ = std::move(tshape);
+    if (!rayCalc_.isInit())
+    {
+        rayCalc_.init();
+    }
+    RayCalcRetCode res = rayCalc_.compileProgram(tshape_);
+    if (res != RayCalcRetCode::OK) {
+        std::cout << "Error compiling OpenCL code." << std::endl;
+        die("Death because of error compiling OpenCL code.");
+    }
+
     Mesh mesh;
     if (rayCalc_.isInit())
     {
         //Input viewer uniforms.
         //Input parameters.
-        RayCalcRetCode res = rayCalc_.setParameters(shape_);
+        RayCalcRetCode res = rayCalc_.setParameters(tshape_);
         if (res != RayCalcRetCode::OK) {
             std::cout << "Error compiling OpenCL code." << std::endl;
             die("Death because of error compiling OpenCL code.");
         }
         //Input condition parameters.
         //Calculate rays.
-        RayCalcResult result = rayCalc_.calculate(shape_);
+        RayCalcResult result = rayCalc_.calculate(tshape_);
         //Convert rays to lines.
         //std::cout << "Drawing lines...." << std::endl;
         mesh.setDrawMode(GL_LINES);
@@ -140,8 +151,8 @@ Viewer::set_shape(Viewed_Shape shape)
             mesh.addColor(glm::vec4(1.0, 1.0, 1.0, 1.0));
         }
     }
+#ifdef MULTIPASS_RENDER
     fpVbo_ = mesh.getVbo();
-#endif
        //Find bbox_min, bbox_max definition statements.
         std::string bbox;
         std::istringstream iss(shape_.frag_);
@@ -152,16 +163,16 @@ Viewer::set_shape(Viewed_Shape shape)
                 bbox += line + "\n";
             }
         }
-        fpShader_.detach(GL_FRAGMENT_SHADER | GL_VERTEX_SHADER);
-        if (!fpShader_.load(fpVbo_->getVertexLayout()->getDefaultFragShader(),
-                            fpVbo_->getVertexLayout()->getDefaultFPVertShader(bbox),
-                            config_.verbose_))
-            error_ = true;
-
+        if (is_open()) {
+            fpShader_.detach(GL_FRAGMENT_SHADER | GL_VERTEX_SHADER);
+            if (!fpShader_.load(fpVbo_->getVertexLayout()->getDefaultFragShader(),
+                                fpVbo_->getVertexLayout()->getDefaultFPVertShader(bbox),
+                                config_.verbose_))
+                error_ = true;
+        }
 #endif
-        fps_.reset();
-    }
 }
+#endif
 
 void
 Viewer::run()
@@ -398,16 +409,16 @@ void Viewer::setup()
     fps_.reset();
 
 #ifdef CALC_RAY
-        RayCalcRetCode res = rayCalc_.compileProgram(shape_);
-        if (res != RayCalcRetCode::OK) {
-            std::cout << "Error compiling OpenCL code." << std::endl;
-            die("Death because of error compiling OpenCL code.");
-        }
+//        RayCalcRetCode res = rayCalc_.compileProgram(tshape_);
+//        if (res != RayCalcRetCode::OK) {
+//            std::cout << "Error compiling OpenCL code." << std::endl;
+//            die("Death because of error compiling OpenCL code.");
+//        }
 #endif
 
 #ifdef MULTIPASS_RENDER
 // Gen mesh.
-    Mesh mesh;
+    //Mesh mesh;
     //mesh.addVertex(glm::vec3(-1.0, -1.0, 1.0));
     //mesh.addColor(glm::vec4(1.0, 0.3, 0.3, 1.0));
     //mesh.addVertex(glm::vec3(1.0, -1.0, 1.0));
@@ -419,35 +430,35 @@ void Viewer::setup()
     //mesh.addIndex(0);   mesh.addIndex(1);   mesh.addIndex(3);
     //mesh.addIndex(1);   mesh.addIndex(2);   mesh.addIndex(3);
 #ifdef CALC_RAY
-    if (rayCalc_.isInit())
-    {
-        //Input viewer uniforms.
-        //Input parameters.
-        RayCalcRetCode res = rayCalc_.setParameters(shape_);
-        if (res != RayCalcRetCode::OK) {
-            std::cout << "Error compiling OpenCL code." << std::endl;
-            die("Death because of error compiling OpenCL code.");
-        }
-        //Input condition parameters.
-        //Calculate rays.
-        RayCalcResult result = rayCalc_.calculate(shape_);
-        //Convert rays to lines.
-        //std::cout << "Drawing lines...." << std::endl;
-        mesh.setDrawMode(GL_LINES);
-        for (auto r : result.rays) {
-            //std::cout << "Line: (" << std::to_string(r.pos.x)
-            //          << ", " << std::to_string(r.pos.y)
-            //          << ", " << std::to_string(r.pos.z)
-            //          << ") -> (" << std::to_string((r.pos + r.dir).x)
-            //          << ", " << std::to_string((r.pos + r.dir).y)
-            //          << ", " << std::to_string((r.pos + r.dir).z)
-            //          << ")" << std::endl;
-            mesh.addVertex(r.pos);
-            mesh.addVertex(r.pos + r.dir);
-            mesh.addColor(glm::vec4(1.0, 1.0, 1.0, 1.0));
-            mesh.addColor(glm::vec4(1.0, 1.0, 1.0, 1.0));
-        }
-    }
+//    if (rayCalc_.isInit())
+//    {
+//        //Input viewer uniforms.
+//        //Input parameters.
+//        RayCalcRetCode res = rayCalc_.setParameters(shape_);
+//        if (res != RayCalcRetCode::OK) {
+//            std::cout << "Error compiling OpenCL code." << std::endl;
+//            die("Death because of error compiling OpenCL code.");
+//        }
+//        //Input condition parameters.
+//        //Calculate rays.
+//        RayCalcResult result = rayCalc_.calculate(shape_);
+//        //Convert rays to lines.
+//        //std::cout << "Drawing lines...." << std::endl;
+//        mesh.setDrawMode(GL_LINES);
+//        for (auto r : result.rays) {
+//            //std::cout << "Line: (" << std::to_string(r.pos.x)
+//            //          << ", " << std::to_string(r.pos.y)
+//            //          << ", " << std::to_string(r.pos.z)
+//            //          << ") -> (" << std::to_string((r.pos + r.dir).x)
+//            //          << ", " << std::to_string((r.pos + r.dir).y)
+//            //          << ", " << std::to_string((r.pos + r.dir).z)
+//            //          << ")" << std::endl;
+//            mesh.addVertex(r.pos);
+//            mesh.addVertex(r.pos + r.dir);
+//            mesh.addColor(glm::vec4(1.0, 1.0, 1.0, 1.0));
+//            mesh.addColor(glm::vec4(1.0, 1.0, 1.0, 1.0));
+//        }
+//    }
 #endif
 
     //Find bbox_min, bbox_max definition statements.
@@ -460,7 +471,7 @@ void Viewer::setup()
             bbox += line + "\n";
         }
     }
-    fpVbo_ = mesh.getVbo();
+    //fpVbo_ = mesh.getVbo();
     if (!fpShader_.load(fpVbo_->getVertexLayout()->getDefaultFragShader(),
                         fpVbo_->getVertexLayout()->getDefaultFPVertShader(bbox),
                         config_.verbose_))

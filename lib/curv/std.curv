@@ -123,6 +123,12 @@ perp [x,y] = [-y, x];
 ////////////
 make_shape r =
     let shape = {
+            rays_origin [_,_] : [0, 0, 0],
+            rays_direction [_,_] : [0, 0, 0],
+            rays_colour [_,_] : [0, 0, 0],
+            rays_index [_,_] : 0,
+            ray_is_2d : false,
+            ray_is_3d : true,
             is_2d : false,
             is_3d : false,
             bbox : [[-inf,-inf,-inf],[inf,inf,inf]],
@@ -779,7 +785,7 @@ row = let
             xdelta = [];
             x = -width / 2;
             i = 0;
-        in do 
+        in do
             while (i < count shapes) (
                 xdelta := concat[xdelta, [x - shapes.[i].bbox.[MIN,X]]];
                 x := x + gap + size(shapes@i)@X;
@@ -1669,4 +1675,52 @@ colour_picker =
     picker = #colour_picker;
   };
 
+/// LIGHT SOURCES ///
+point_light _s shape =
+    let s = if (is_vec2 _s) [..._s, 1]
+            else do assert(is_vec3(_s) && shape.is_3d) in _s;
+    in make_shape {
+        dist : shape.dist,
+        colour : shape.colour,
+        bbox : shape.bbox,
+        rays_origin[_,_] : s,
+        rays_direction[_,_] : [1, 0, 0],
+        rays_colour : shape.rays_colour,
+        rays_index : shape.rays_index,
+        ray_is_2d : shape.is_2d,
+        ray_is_3d : shape.is_3d,
+        is_2d : shape.is_2d,
+        is_3d : shape.is_3d,
+    };
+ray_index _s shape =
+    let s = do assert(is_num(_s)) in _s;
+    in make_shape {
+        dist : shape.dist,
+        colour : shape.colour,
+        bbox : shape.bbox,
+        rays_origin : shape.rays_origin,
+        rays_direction : shape.rays_direction,
+        rays_colour : shape.rays_colour,
+        rays_index[_,_] : [s],
+        ray_is_2d : shape.is_2d,
+        ray_is_3d : shape.is_3d,
+        is_2d : shape.is_2d,
+        is_3d : shape.is_3d,
+    };
+
+ray_colour _s shape =
+    let s = do assert(is_vec3(_s)) in [..._s, 1];
+    in make_shape {
+        dist : shape.dist,
+        colour : shape.colour,
+        bbox : shape.bbox,
+        rays_origin : shape.rays_origin,
+        rays_direction : shape.rays_direction,
+        rays_colour[_,_] : s,
+        rays_index : shape.rays_index,
+        ray_is_2d : shape.is_2d,
+        ray_is_3d : shape.is_3d,
+        is_2d : shape.is_2d,
+        is_3d : shape.is_3d,
+    };
 }

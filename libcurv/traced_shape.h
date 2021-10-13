@@ -11,6 +11,8 @@
 #include <CL/cl.h>
 #include <optional>
 #include <tuple>
+#include <libcurv/rays.h>
+
 
 namespace curv {
 
@@ -50,6 +52,8 @@ struct Traced_Shape : Viewed_Shape
     Traced_Shape() {};
 
     Traced_Shape(const Shape_Program& shape, const Render_Opts& opts);
+
+    Traced_Shape(const Shape_Program& shape, const Rays_Program& rays, const Render_Opts& opts);
 
     bool empty() { return clprog_.empty() || frag_.empty(); }
 

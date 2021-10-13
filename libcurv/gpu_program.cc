@@ -77,21 +77,12 @@ GPU_Program::recognize(Value val, Render_Opts opts)
                 At_Field("config", picx));
             auto state_val = prec->getfield(value_key, picx);
             Picker::State state(config.type_, state_val, At_Field("value",picx));
-#ifdef CALC_RAY
-            vshape_.param_.insert(
-                std::pair<const std::string,Traced_Shape::Parameter>{
-                    label,
-                    Traced_Shape::Parameter{name, config, state}});
-            ++picx.index_;
-        }
-#else
             vshape_.param_.insert(
                 std::pair<const std::string,Viewed_Shape::Parameter>{
                     label,
                     Viewed_Shape::Parameter{name, config, state}});
             ++picx.index_;
         }
-#endif
 
         return true;
     }
@@ -101,11 +92,7 @@ GPU_Program::recognize(Value val, Render_Opts opts)
     is_2d_ = shape.is_2d_;
     is_3d_ = shape.is_3d_;
     bbox_ =  shape.bbox_;
-#ifdef CALC_RAY
-    Traced_Shape vshape(shape, opts);
-#else
     Viewed_Shape vshape(shape, opts);
-#endif
     std::swap(vshape_, vshape);
     return true;
 }

@@ -11,8 +11,12 @@
 #include <libcurv/die.h>
 #include <libcurv/viewed_shape.h>
 #include <libcurv/viewer/viewer.h>
+#ifdef CALC_RAY
+#include <libcurv/traced_shape.h>
+#endif
 
 #include "shapes.h"
+
 
 // View_Server implements a client/server architecture for running a Curv
 // viewer window. The 'client' and 'server' run in two different threads within
@@ -36,10 +40,9 @@ private:
     std::mutex request_mutex_;
     std::condition_variable request_condition_;
 #ifdef CALC_RAY
-    curv::Traced_Shape request_shape_;
-#else
-    curv::Viewed_Shape request_shape_;
+    curv::Traced_Shape t_request_shape_;
 #endif
+    curv::Viewed_Shape request_shape_;
     struct Message {
         View_Server& server_;
         std::unique_lock<std::mutex> lock_;
@@ -117,24 +120,40 @@ public:
         const curv::Shape_Program& shape,
         const curv::Render_Opts& opts)
     {
-#ifdef CALC_RAY
-        request_shape_ = curv::Traced_Shape(shape, opts);
-#else
         request_shape_ = curv::Viewed_Shape(shape, opts);
-#endif
         send(Request::k_display_shape);
         //assert(request_shape_.empty());
     }
 #ifdef CALC_RAY
-    void display_shape(curv::Traced_Shape vshape)
-#else
-    void display_shape(curv::Viewed_Shape vshape)
+    void display_shape(
+        const curv::Shape_Program& shape,
+        const curv::Rays_Program& rays,
+        const curv::Render_Opts& opts)
+    {
+        t_request_shape_ = curv::Traced_Shape(shape, rays, opts);
+        request_shape_ = curv::Viewed_Shape(shape, opts);
+        send(Request::k_display_shape);
+        //assert(request_shape_.empty());
+    }
 #endif
+
+    void display_shape(curv::Viewed_Shape vshape)
     {
         std::swap(request_shape_, vshape);
         send(Request::k_display_shape);
         //assert(request_shape_.empty());
     }
+
+#ifdef CALC_RAY
+    void display_shape(curv::Viewed_Shape vshape,
+                       curv::Traced_Shape tshape)
+    {
+        std::swap(request_shape_, vshape);
+        std::swap(t_request_shape_, tshape);
+        send(Request::k_display_shape);
+        //assert(request_shape_.empty());
+    }
+#endif
     // Called by client thread. Close the viewer window, if open, and cause
     // the server to stop running (the run() function will return).
     void exit()

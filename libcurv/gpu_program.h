@@ -7,11 +7,7 @@
 
 #include <libcurv/render.h>
 #include <libcurv/shape.h>
-#ifdef CALC_RAY
-#include <libcurv/traced_shape.h>
-#else
 #include <libcurv/viewed_shape.h>
-#endif
 namespace curv {
 
 struct GPU_Program
@@ -21,11 +17,7 @@ struct GPU_Program
     bool is_2d_;
     bool is_3d_;
     BBox bbox_;
-#ifdef CALC_RAY
-    Traced_Shape vshape_;
-#else
     Viewed_Shape vshape_;
-#endif
     GPU_Program(Program&);
 
     // If the value is a shape, fill in most fields and return true.
