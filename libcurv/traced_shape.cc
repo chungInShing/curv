@@ -195,15 +195,31 @@ static const char* DEFAULT_RAY_TRACE =
                     "}\n"
                     "\n";
 
+static const std::vector<std::tuple<std::string, Traced_Shape::VarType, bool, cl_mem_flags>>
+    DEFAULT_RAY_INIT_PARAMETER=
+                    { {"i", Traced_Shape::VarType::FLOAT, true, CL_MEM_READ_ONLY},
+                      {"io", Traced_Shape::VarType::FLOAT3, true, CL_MEM_WRITE_ONLY},
+                      {"id", Traced_Shape::VarType::FLOAT3, true, CL_MEM_WRITE_ONLY},
+                      {"ic", Traced_Shape::VarType::FLOAT4, true, CL_MEM_WRITE_ONLY},
+                      {"indRatio", Traced_Shape::VarType::FLOAT, true, CL_MEM_WRITE_ONLY}};
+
 static const char* DEFAULT_RAY_INIT =
                     "__kernel void init_main(__global float* i,\n" //The only variable to input to functions generating initial ray values.
-                    "                   __global float3* ro,\n" //Initial ray origin.
-                    "                   __global float3* rd,\n" //Initial ray direction.
-                    "                   __global float4* rc,\n" //Initial ray colour.
-                    "                   __global float* rind\n" //Initial ray index or reflection.
+                    "                   __global float3* io,\n" //Initial ray origin.
+                    "                   __global float3* id,\n" //Initial ray direction.
+                    "                   __global float3* ic,\n" //Initial ray colour.
+                    "                   __global float* indRatio\n" //Initial ray index or reflection.
                     "                   ) {\n"
+                    "    uint gid = get_global_id(0);\n"
+                    "    io[gid] = rays_origin(vec2(i[gid],0));\n"
+                    "    id[gid] = rays_direction(vec2(i[gid],0));\n"
+                    "    ic[gid] = rays_colour(vec2(i[gid],0));\n"
+                    "    indRatio[gid] = rays_index(vec2(i[gid],0));\n"
                     "}\n"
                     "\n";
+
+static const char* DEFAULT_RAY_CALC_KERNEL_NAME = "main";
+static const char* DEFAULT_INIT_RAY__KERNEL_NAME = "init_main";
 
 //Required shader functions: dist, calcNormal, castRay, colour
 //Required shader constant: ray_max_iter, ray_max_depth
@@ -275,8 +291,8 @@ void export_rays_clprog_3d(const Rays_Program& rays, const Render_Opts& opts, st
             << ");\n";
     }
 
-    //out <<
-    //    DEFAULT_RAY_INIT;
+    out <<
+        DEFAULT_RAY_INIT;
 
 }
 
@@ -388,10 +404,10 @@ Traced_Shape::Traced_Shape(const Shape_Program& shape, const Rays_Program& rays,
 
 }
 
-uint Traced_Shape::getKernelVarIndex(const std::string &varName, const VarType type, const bool isArray)
+uint Traced_Shape::getVarIndex(const std::vector<std::tuple<std::string, Traced_Shape::VarType, bool, cl_mem_flags>>& paramSet, const std::string &varName, const VarType type, const bool isArray)
 {
-    for (long unsigned int i=0; i < DEFAULT_KERNEL_PARAMETER.size(); i++) {
-        auto element = DEFAULT_KERNEL_PARAMETER[i];
+    for (long unsigned int i=0; i < paramSet.size(); i++) {
+        auto element = paramSet[i];
         if ( varName == std::get<0>(element) &&
              type == std::get<1>(element) &&
              isArray == std::get<2>(element)) {
@@ -401,19 +417,18 @@ uint Traced_Shape::getKernelVarIndex(const std::string &varName, const VarType t
     return -1;
 }
 
-void Traced_Shape::setInitialRays(const std::vector<Ray>& inputRays)
-{
-
+void Traced_Shape::setInitBuffers(unsigned int numRays) {
     //clear  argument data.
     argsData_.clear();
-
-    int numRays = inputRays.size();
 
     //Allocate space for data.
     cl_float3 zerofl;
     zerofl.x = 0;
     zerofl.y = 0;
     zerofl.z = 0;
+
+    argsData_["i"] = MemDataAttr(std::shared_ptr<cl_float[]>(new cl_float[numRays]),
+                      "i", VarType::FLOAT, sizeof(cl_float) * numRays);
     argsData_["io"] = MemDataAttr(std::shared_ptr<cl_float3[]>(new cl_float3[numRays]),
                       "io", VarType::FLOAT3, sizeof(cl_float3) * numRays);
     argsData_["id"] = MemDataAttr(std::shared_ptr<cl_float3[]>(new cl_float3[numRays]),
@@ -430,9 +445,27 @@ void Traced_Shape::setInitialRays(const std::vector<Ray>& inputRays)
                       "rvalid", VarType::FLOAT, sizeof(cl_float) * numRays);
     argsData_["time"] = MemDataAttr(std::shared_ptr<cl_float[]>(new cl_float[1]{0}),
                       "time", VarType::FLOAT, sizeof(cl_float) * 1);
+    argsData_["ic"] = MemDataAttr(std::shared_ptr<cl_float3[]>(new cl_float3[numRays]),
+                      "ic", VarType::FLOAT3, sizeof(cl_float3) * numRays);
     //Write initialRays.
-    for (int i=0; i<numRays;i++) {
-        cl_float3 o, d;
+    for (unsigned int i=0; i<numRays;i++) {
+        //Evenly spread i from 0.0 to 1.0.
+        std::reinterpret_pointer_cast<cl_float[]>(argsData_["i"].data_).get()[i] = (float)i/fmax(1.0, (float)(numRays - 1));
+        std::reinterpret_pointer_cast<cl_float[]>(argsData_["ivalid"].data_).get()[i] = 1.0;
+        std::reinterpret_pointer_cast<cl_float[]>(argsData_["rvalid"].data_).get()[i] = 0.0;
+    }
+    numRays_ = numRays;
+    finished_ = false;
+}
+
+void Traced_Shape::setInitialRays(const std::vector<Ray>& inputRays)
+{
+
+    unsigned int numRays = inputRays.size();
+    setInitBuffers(numRays);
+    //Write initialRays.
+    for (unsigned int i=0; i<numRays;i++) {
+        cl_float3 o, d, c;
         cl_float r;
         o.x = inputRays[i].pos.x;
         o.y = inputRays[i].pos.y;
@@ -441,18 +474,17 @@ void Traced_Shape::setInitialRays(const std::vector<Ray>& inputRays)
         d.y = inputRays[i].dir.y;
         d.z = inputRays[i].dir.z;
         r = inputRays[i].refractIndRatio;
+        c.x = 1.0;
+        c.y = 1.0;
+        c.z = 1.0;
 
         std::reinterpret_pointer_cast<cl_float3[]>(argsData_["io"].data_).get()[i] = o;
         std::reinterpret_pointer_cast<cl_float3[]>(argsData_["id"].data_).get()[i] = d;
+        std::reinterpret_pointer_cast<cl_float3[]>(argsData_["ic"].data_).get()[i] = c;
         std::reinterpret_pointer_cast<cl_float[]>(argsData_["indRatio"].data_).get()[i] = r;
-        std::reinterpret_pointer_cast<cl_float[]>(argsData_["ivalid"].data_).get()[i] = 1.0;
-        std::reinterpret_pointer_cast<cl_float[]>(argsData_["rvalid"].data_).get()[i] = 0.0;
         //std::cout << "Init rays" << std::endl;
         //std::cout << "ivalid is " << std::to_string(std::reinterpret_pointer_cast<cl_float[]>(argsData_["ivalid"].data_).get()[i]) << ", rvalid is " << std::to_string(std::reinterpret_pointer_cast<cl_float[]>(argsData_["rvalid"].data_).get()[i]) << std::endl;
     }
-    numRays_ = numRays;
-    finished_ = false;
-
 }
 
 void Traced_Shape::setInitialRays() {
@@ -491,7 +523,7 @@ bool Traced_Shape::propagate() {
             if (is_i_valid) {
                 cl_float3 rd = std::reinterpret_pointer_cast<cl_float3[]>(argsData_["rd"].data_).get()[i];
                 cl_float3 ro = std::reinterpret_pointer_cast<cl_float3[]>(argsData_["ro"].data_).get()[i];
-                cl_float3 id = std::reinterpret_pointer_cast<cl_float3[]>(argsData_["id"].data_).get()[i];
+                //cl_float3 id = std::reinterpret_pointer_cast<cl_float3[]>(argsData_["id"].data_).get()[i];
                 cl_float3 io = std::reinterpret_pointer_cast<cl_float3[]>(argsData_["io"].data_).get()[i];
                 rays_.push_back(Ray{glm::vec3(io.x, io.y, io.z),
                                     glm::vec3(ro.x - io.x, ro.y - io.y, ro.z - io.z),
@@ -542,14 +574,33 @@ bool Traced_Shape::propagate() {
     return ended;
 }
 
-std::vector<std::tuple<std::string, int, Traced_Shape::VarType, bool, size_t, void*, cl_mem_flags>>
-        Traced_Shape::getKernelArgParams() {
-    std::vector<std::tuple<std::string, int, Traced_Shape::VarType, bool, size_t, void*, cl_mem_flags>>
-        result;
-    for (auto e: DEFAULT_KERNEL_PARAMETER) {
+std::vector<Traced_Shape::KernelParam> Traced_Shape::getKernelArgParams() {
+    return getArgParams(ParamSet::KERNEL);
+}
+
+std::vector<Traced_Shape::KernelParam> Traced_Shape::getRayInitArgParams() {
+    return getArgParams(ParamSet::RAY_INIT);
+}
+
+std::vector<Traced_Shape::KernelParam> Traced_Shape::getArgParams(ParamSet set) {
+    std::vector<Traced_Shape::KernelParam> result;
+    std::vector<std::tuple<std::string, Traced_Shape::VarType, bool, cl_mem_flags>> paramSet;
+
+    switch (set) {
+        case RAY_INIT:
+            paramSet = DEFAULT_RAY_INIT_PARAMETER;
+            break;
+        case KERNEL:
+            paramSet = DEFAULT_KERNEL_PARAMETER;
+            break;
+        default:
+            die("getArgParams: Unknow parameter set.");
+    }
+
+    for (auto e: paramSet) {
         if (auto data = getData(std::get<0>(e))) {
-            result.push_back(std::make_tuple(std::get<0>(e),
-                    getKernelVarIndex(std::get<0>(e), std::get<1>(e), std::get<2>(e)),
+            result.push_back(Traced_Shape::KernelParam(std::get<0>(e),
+                    getVarIndex(paramSet, std::get<0>(e), std::get<1>(e), std::get<2>(e)),
                     std::get<1>(e), std::get<2>(e), data->size_,
                     data->data_.get(), std::get<3>(e)));
         }
@@ -560,6 +611,14 @@ std::vector<std::tuple<std::string, int, Traced_Shape::VarType, bool, size_t, vo
 std::optional<Traced_Shape::MemDataAttr> Traced_Shape::getData(const std::string& param) {
     return argsData_.find(param) != argsData_.end() ?
             std::optional<MemDataAttr>(argsData_[param]) : std::nullopt;
+}
+
+std::string Traced_Shape::getRayCalcKernelName() {
+    return DEFAULT_RAY_CALC_KERNEL_NAME;
+}
+
+std::string Traced_Shape::getInitRayKernelName() {
+    return DEFAULT_INIT_RAY__KERNEL_NAME;
 }
 
 } //namespace

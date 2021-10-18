@@ -8,6 +8,7 @@
 #include <CL/cl.h>
 #include <memory>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <type_traits>
 
@@ -72,20 +73,12 @@ void RayCalc::close() {
     }
 }
 
-RayCalcRetCode RayCalc::compileProgram(Traced_Shape& shape) {
-    RayCalcRetCode result = RayCalcRetCode::OK;
-    if (clkernel_ != nullptr) {
-        clReleaseKernel(clkernel_);
-        clkernel_ = nullptr;
-    }
-    if (clprog_ != nullptr) {
-        clReleaseProgram(clprog_);
-        clprog_ = nullptr;
-    }
+std::optional<cl_program>  RayCalc::compileProgram(const std::string& source, RayCalcRetCode& code) {
+    cl_program prog = nullptr;
     //Compile program.
     cl_int err;
-    const char* src[] = {shape.clprog_.c_str(), NULL};
-    clprog_ = clCreateProgramWithSource(clContext_,
+    const char* src[] = {source.c_str(), NULL};
+    prog = clCreateProgramWithSource(clContext_,
                                         1,
                                         src,
                                         NULL,
@@ -94,45 +87,62 @@ RayCalcRetCode RayCalc::compileProgram(Traced_Shape& shape) {
     if (err != CL_SUCCESS) {
         std::cout << "Error creating program." << std::endl;
         print_opencl_results(err);
-        result = RayCalcRetCode::COMPILE_ERROR;
+        code = RayCalcRetCode::COMPILE_ERROR;
     } else {
         std::cout << "Program created successfully." << std::endl;
-        err = clBuildProgram(clprog_, 0, NULL, NULL, NULL, NULL);
+        err = clBuildProgram(prog, 0, NULL, NULL, NULL, NULL);
         if (err != CL_SUCCESS) {
             std::cout << "Error building program." << std::endl;
             print_opencl_results(err);
             const int MAX_BUFFER_SIZE = 100000;
             char buffer[MAX_BUFFER_SIZE];
             size_t length = 0;
-            clGetProgramBuildInfo(clprog_, device_id_, CL_PROGRAM_BUILD_LOG, sizeof(char) * MAX_BUFFER_SIZE, buffer, &length);
+            clGetProgramBuildInfo(prog, device_id_, CL_PROGRAM_BUILD_LOG, sizeof(char) * MAX_BUFFER_SIZE, buffer, &length);
             std::cout << "Error buffer length is " << std::to_string(length) << std::endl;
             std::cout << buffer << std::endl;
-            result = RayCalcRetCode::COMPILE_ERROR;
+            code = RayCalcRetCode::COMPILE_ERROR;
             std::cout << "Source openCL:" <<
                 "-------------------" << std::endl << std::endl <<
-                shape.clprog_ << "-------------------" << std::endl;
+                prog << "-------------------" << std::endl;
         } else {
             std::cout << "Program built successfully." << std::endl;
-            clkernel_ = clCreateKernel(clprog_, "main", &err);
-            if (!clkernel_ || err != CL_SUCCESS) {
-                std::cout << "Error creating kernel." << std::endl;
-                print_opencl_results(err);
-                result = RayCalcRetCode::ERROR;
-            }
+            code = RayCalcRetCode::OK;
         }
     }
-    return result;
+    return code == RayCalcRetCode::OK && prog != nullptr ?
+             std::optional<cl_program>(prog) : std::nullopt;
 }
 
-void RayCalc::setKernelArgs(const std::string& paramName, int index,
+std::optional<cl_kernel> RayCalc::genKernel(cl_program prog, const std::string& kernelName, RayCalcRetCode& code) {
+    cl_int err;
+    cl_kernel kernel = nullptr;
+    if (prog == nullptr || kernelName.empty()) {
+        std::cout << "Program or kernel name is null" << std::endl;
+        code = RayCalcRetCode::INPUT_ERROR;
+    } else {
+        kernel = clCreateKernel(prog, kernelName.c_str(), &err);
+        if (!kernel || err != CL_SUCCESS) {
+            std::cout << "Error creating kernel." << std::endl;
+            print_opencl_results(err);
+            code = RayCalcRetCode::ERROR;
+        } else {
+            std::cout << "Kernel create successfully." << std::endl;
+            code = RayCalcRetCode::OK;
+        }
+    }
+    return code == RayCalcRetCode::OK && kernel != nullptr ?
+            std::optional<cl_kernel>(kernel) : std::nullopt;
+}
+
+void RayCalc::setKernelArgs(cl_kernel& kernel, int index,
                             const Traced_Shape::VarType& paramType,
                             const bool isArray, const size_t size, void* memObj) {
 
-    if (clprog_ != nullptr && clkernel_ != nullptr) {
+    if (kernel != nullptr) {
         cl_int err = 0;
-        err = clSetKernelArg(clkernel_, index, size, memObj);
+        err = clSetKernelArg(kernel, index, size, memObj);
         if (err != CL_SUCCESS) {
-            std::cout << "Error setting parameter name: " << paramName << ", at index: " << index
+            std::cout << "Error setting parameter index: " << index
                       << ", with type: " << std::to_string(paramType)
                       << ", and is arrray: " << std::to_string(isArray) << ", with size: "
                       << size << ", at address: " << memObj << ", return value"
@@ -152,95 +162,101 @@ RayCalcRetCode RayCalc::setParameters(Traced_Shape& shape) {
     //Refraction index ratio(float).
     return result;
 }
+std::optional<cl_mem> RayCalc::createAndLoadBuffer(cl_kernel kernel, const Traced_Shape::KernelParam& param) {
+    cl_int err;
+    cl_mem memObj = NULL;
+    //Create memory object.
+    memObj = clCreateBuffer(clContext_, param.bufferFlags_ |
+                            CL_MEM_ALLOC_HOST_PTR | CL_MEM_COPY_HOST_PTR,
+                            param.bufferSize_, param.bufferPtr_, &err);
+    if (memObj != NULL && err == CL_SUCCESS) {
+        //Load kernel parameters.
+        setKernelArgs(kernel, param.index_, param.varType_,
+                      param.isArray_, sizeof(cl_mem), (void*)&memObj);
+    } else {
+        std::cout << "Error creating memory object for parameter " <<
+                param.name_ << ", index " <<
+                std::to_string(param.index_) << ", data type " <<
+                std::to_string(param.varType_) << ", is array " <<
+                std::to_string(param.isArray_) << ", buffer size" <<
+                std::to_string(param.bufferSize_) << std::endl;
+    }
+    return (memObj != NULL && err == CL_SUCCESS) ?
+        std::optional<cl_mem>(memObj) : std::nullopt;
+
+}
+
+cl_int RayCalc::runKernel(cl_kernel kernel, size_t* global_size, size_t* local_size) {
+    return clEnqueueNDRangeKernel(command_queue_, kernel, 1, NULL,
+                global_size, local_size, 0, NULL, NULL);
+}
+
+cl_int RayCalc::readBack(cl_mem memObj, const Traced_Shape::KernelParam& param) {
+    //if (param.bufferFlags_ == CL_MEM_WRITE_ONLY ||
+    //        param.bufferFlags_ == CL_MEM_READ_WRITE) {
+        cl_int err = clEnqueueReadBuffer(command_queue_, memObj, CL_TRUE, 0,
+                param.bufferSize_, param.bufferPtr_ , 0, NULL, NULL);
+        if (err != CL_SUCCESS) {
+            std::cout << "Error writing from buffer pameter " <<
+                param.name_ << ", index " <<
+                std::to_string(param.index_) << ", data type " <<
+                std::to_string(param.varType_) << ", is array " <<
+                std::to_string(param.isArray_) << ", buffer size" <<
+                std::to_string(param.bufferSize_) << std::endl;
+        }
+    //}
+    return err;
+}
 
 RayCalcResult RayCalc::calculate(Traced_Shape& shape) {
     RayCalcResult result;
-    shape.setInitialRays();
     bool finished = false;
     uint iterations = 1;
-    cl_int err;
-    do {
-        //Tuple of parameters, with host memery obj.
-        std::vector<std::tuple<
-        decltype(shape.getKernelArgParams())::value_type,
-        cl_mem>> buffers;
-        for (auto param : shape.getKernelArgParams()) {
-            cl_mem memObj = NULL;
-            //Create memory object.
-            memObj = clCreateBuffer(clContext_, std::get<6>(param) |
-                                    CL_MEM_ALLOC_HOST_PTR | CL_MEM_COPY_HOST_PTR,
-                                    std::get<4>(param), std::get<5>(param), &err);
-            if (memObj != NULL && err == CL_SUCCESS) {
-                buffers.push_back(std::make_tuple(param, memObj));
-                //Load kernel parameters.
-                setKernelArgs(std::get<0>(param), std::get<1>(param), std::get<2>(param),
-                              std::get<3>(param), sizeof(cl_mem), (void*)&memObj);
-            } else {
-                std::cout << "Error creating memory object for parameter " <<
-                        std::get<0>(param) << ", index " <<
-                        std::to_string(std::get<1>(param)) << ", data type " <<
-                        std::to_string(std::get<2>(param)) << ", is array " <<
-                        std::to_string(std::get<3>(param)) << ", buffer size" <<
-                        std::to_string(std::get<4>(param)) << std::endl;
-                die("Error creating memory object");
-            }
-        }
-        //Load to queue.
-        //Queue transfer from host to device.
-        //for (auto e : buffers) {
-        //    auto param = std::get<0>(e);
-        //    auto memObj = std::get<1>(e);
-        //    if (std::get<6>(param) == CL_MEM_READ_ONLY ||
-        //            std::get<6>(param) == CL_MEM_READ_WRITE) {
-        //        err = clEnqueueWriteBuffer(command_queue_, memObj, CL_TRUE, 0,
-        //                std::get<4>(param), std::get<5>(param) , 0, NULL, NULL);
-        //        if (err != CL_SUCCESS) {
-        //            std::cout << "Error writing to buffer pameter " <<
-        //                std::get<0>(param) << ", index " <<
-        //                std::to_string(std::get<1>(param)) << ", data type " <<
-        //                std::to_string(std::get<2>(param)) << ", is array " <<
-        //                std::to_string(std::get<3>(param)) << ", buffer size" <<
-        //                std::to_string(std::get<4>(param)) << std::endl;
-        //        }
-        //    }
-        //}
-
-        // Queue OpenCL kernel on the list
-        size_t global_item_size = shape.getNumRays(); // Process the entire lists
-        size_t local_item_size = shape.getNumRays();
-        err = clEnqueueNDRangeKernel(command_queue_, clkernel_, 1, NULL,
-                &global_item_size, &local_item_size, 0, NULL, NULL);
-        //Queue transfer from device to host.
-        for (auto e : buffers) {
-            auto param = std::get<0>(e);
-            auto memObj = std::get<1>(e);
-            //if (std::get<6>(param) == CL_MEM_WRITE_ONLY ||
-            //        std::get<6>(param) == CL_MEM_READ_WRITE) {
-                err = clEnqueueReadBuffer(command_queue_, memObj, CL_TRUE, 0,
-                        std::get<4>(param), std::get<5>(param) , 0, NULL, NULL);
-                if (err != CL_SUCCESS) {
-                    std::cout << "Error writing from buffer pameter " <<
-                        std::get<0>(param) << ", index " <<
-                        std::to_string(std::get<1>(param)) << ", data type " <<
-                        std::to_string(std::get<2>(param)) << ", is array " <<
-                        std::to_string(std::get<3>(param)) << ", buffer size" <<
-                        std::to_string(std::get<4>(param)) << std::endl;
+    cl_int err = 0;
+    shape.setInitialRays();
+    RayCalcRetCode code;
+    if (auto prog = compileProgram(shape.clprog_, code)) {
+        if (auto kernel = genKernel(prog.value(), shape.getRayCalcKernelName(), code)) {
+            do {
+                //Tuple of parameters, with host memery obj.
+                std::vector<std::tuple<
+                Traced_Shape::KernelParam,
+                cl_mem>> buffers;
+                for (auto param : shape.getKernelArgParams()) {
+                     if (auto memObj = createAndLoadBuffer(kernel.value(), param)) {
+                        buffers.push_back(std::make_tuple(param, memObj.value()));
+                     } else {
+                         die("Error creating and loading buffer.");
+                     }
                 }
-            //}
+                // Queue OpenCL kernel on the list
+                size_t global_item_size = shape.getNumRays(); // Process the entire lists
+                size_t local_item_size = shape.getNumRays();
+                err &= runKernel(kernel.value(), &global_item_size, &local_item_size);
+                //Queue transfer from device to host.
+                for (auto e : buffers) {
+                    auto param = std::get<0>(e);
+                    auto memObj = std::get<1>(e);
+                    err &= readBack(memObj, param);
+                }
+                //Let the calculation finish.
+                //clFlush(command_queue_);
+                clFinish(command_queue_);
+                //Release buffers.
+                for (auto b : buffers)
+                    if (std::get<1>(b) != nullptr) {
+                        clReleaseMemObject(std::get<1>(b));
+                    }
+                //Get result.
+                finished = shape.propagate();
+                iterations++;
+            } while (!finished && iterations < param_.maxIter);
+        } else {
+            die ("Error creating kernel");
         }
-        //Let the calculation finish.
-        //clFlush(command_queue_);
-        clFinish(command_queue_);
-        //Release buffers.
-        for (auto b : buffers)
-            if (std::get<1>(b) != nullptr) {
-                clReleaseMemObject(std::get<1>(b));
-            }
-        //Get result.
-        finished = shape.propagate();
-        iterations++;
-    } while (!finished && iterations < param_.maxIter);
-
+    } else {
+        die ("Error creating program");
+    }
     result.rays = shape.getResultRays();
     result.numInitialRays = shape.getNumRays();
     result.numHits = 0;

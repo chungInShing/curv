@@ -115,11 +115,6 @@ Viewer::set_shape(Viewed_Shape shape, Traced_Shape tshape)
     {
         rayCalc_.init();
     }
-    RayCalcRetCode res = rayCalc_.compileProgram(tshape_);
-    if (res != RayCalcRetCode::OK) {
-        std::cout << "Error compiling OpenCL code." << std::endl;
-        die("Death because of error compiling OpenCL code.");
-    }
 
     Mesh mesh;
     if (rayCalc_.isInit())
@@ -408,13 +403,6 @@ void Viewer::setup()
 
     fps_.reset();
 
-#ifdef CALC_RAY
-//        RayCalcRetCode res = rayCalc_.compileProgram(tshape_);
-//        if (res != RayCalcRetCode::OK) {
-//            std::cout << "Error compiling OpenCL code." << std::endl;
-//            die("Death because of error compiling OpenCL code.");
-//        }
-#endif
 
 #ifdef MULTIPASS_RENDER
 // Gen mesh.

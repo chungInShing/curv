@@ -5,6 +5,7 @@
 #ifndef LIBCURV_TRACED_SHAPE_H
 #define LIBCURV_TRACED_SHAPE_H
 
+#include <cstddef>
 #include <glm/glm.hpp>
 #include <libcurv/viewed_shape.h>
 #include <string>
@@ -31,6 +32,8 @@ struct Traced_Shape : Viewed_Shape
 
     enum VarType {BOOL, INT, UINT, FLOAT, FLOAT2, FLOAT3, FLOAT4, UNKNOWN};
 
+    enum ParamSet {RAY_INIT, KERNEL};
+
     struct MemDataAttr {
         std::shared_ptr<void> data_ = nullptr;
         std::string name_;
@@ -42,6 +45,18 @@ struct Traced_Shape : Viewed_Shape
             : data_(attr.data_), name_(attr.name_), dataType_(attr.dataType_), size_(attr.size_) {}
         MemDataAttr() : data_(nullptr), name_(""), dataType_(VarType::UNKNOWN), size_(0) {}
     };
+
+    struct KernelParam {
+        std::string name_;
+        int index_;
+        VarType varType_;
+        bool isArray_;
+        size_t bufferSize_;
+        void* bufferPtr_;
+        cl_mem_flags bufferFlags_;
+        KernelParam(const std::string& name, int index, VarType varType, bool isArray, size_t bufferSize, void* bufferPtr, cl_mem_flags bufferFlags) : name_(name), index_(index), varType_(varType), isArray_(isArray), bufferSize_(bufferSize), bufferPtr_(bufferPtr), bufferFlags_(bufferFlags) {}
+    };
+
 
     std::string clprog_;
 
@@ -58,11 +73,13 @@ struct Traced_Shape : Viewed_Shape
     bool empty() { return clprog_.empty() || frag_.empty(); }
 
     //Returns kernel index from the specific variable name and type. Returns -1 is not found.
-    uint getKernelVarIndex(const std::string& varName, const VarType type, const bool isArray);
+    uint getVarIndex(const std::vector<std::tuple<std::string, Traced_Shape::VarType, bool, cl_mem_flags>>& paramSet, const std::string& varName, const VarType type, const bool isArray);
 
     //Set initial vector of rays to the data structure.
     void setInitialRays(const std::vector<Ray>& inputRays);
     void setInitialRays();
+
+    void setInitBuffers(unsigned int numRays);
 
     //Get number of rays.
     uint getNumRays() { return numRays_; }
@@ -72,14 +89,22 @@ struct Traced_Shape : Viewed_Shape
     bool propagate();
     //Get kernel args parameters.
     // Returns a tuple of parameter name, index, data type, is array, data array size, pointer to param array, openCl buffer flags.
-    std::vector<std::tuple<std::string, int, Traced_Shape::VarType, bool, size_t, void*, cl_mem_flags>>
-        getKernelArgParams();
+    //std::vector<std::tuple<std::string, int, Traced_Shape::VarType, bool, size_t, void*, cl_mem_flags>>
+    std::vector<KernelParam> getKernelArgParams();
+    //Get ray init arg parameters.
+    std::vector<KernelParam> getRayInitArgParams();
+    //General method to get all parameters.
+    std::vector<KernelParam> getArgParams(ParamSet set);
 
     //Data storage.
     std::map<std::string, MemDataAttr> argsData_;
 
     //Getters and setters.
     std::optional<MemDataAttr> getData(const std::string& param);
+
+    std::string getRayCalcKernelName();
+
+    std::string getInitRayKernelName();
 
 };
 

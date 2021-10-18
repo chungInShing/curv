@@ -34,8 +34,11 @@ struct RayCalc
     ~RayCalc();
     RayCalcRetCode init();
     void close();
-    RayCalcRetCode compileProgram(Traced_Shape& shape);
+    std::optional<cl_program> compileProgram(const std::string& source, RayCalcRetCode& code);
+    std::optional<cl_kernel> genKernel(cl_program prog, const std::string& kernelName, RayCalcRetCode& code);
     RayCalcRetCode setParameters(Traced_Shape& shape);
+    RayCalcRetCode calcInitRays(Traced_Shape& shape);
+    RayCalcRetCode calcPropagateRays(Traced_Shape& shape);
     RayCalcResult calculate(Traced_Shape& shape);
     bool isInit() { return initialized_; }
 //OpenCL instances.
@@ -43,8 +46,6 @@ struct RayCalc
     cl_command_queue command_queue_ = NULL;
     cl_device_id device_id_ = NULL;
 //OpenCL programs.
-    cl_program clprog_ = nullptr;
-    cl_kernel clkernel_ = nullptr;
     Parameters param_;
 /*--- INTERNAL STATE ---*/
     bool error_=false;
@@ -53,9 +54,13 @@ struct RayCalc
     bool initCL();
     void setup();
     void closeCL();
-    void setKernelArgs(const std::string& paramName, int index,
+    void setKernelArgs(cl_kernel& kernel, int index,
             const Traced_Shape::VarType& paramType, const bool isArray,
             const size_t size, void* memObj);
+    std::optional<cl_mem> createAndLoadBuffer(cl_kernel kernel, const Traced_Shape::KernelParam& param);
+    cl_int runKernel(cl_kernel kernel, size_t* global_size, size_t* local_size);
+    cl_int readBack(cl_mem memObj, const Traced_Shape::KernelParam& param);
+
 
 };
 } //viewer
