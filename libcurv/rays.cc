@@ -39,6 +39,7 @@ Rays_Program::Rays_Program(
     static Symbol_Ref rays_direction_key = make_symbol("rays_direction");
     static Symbol_Ref rays_colour_key = make_symbol("rays_colour");
     static Symbol_Ref rays_index_key = make_symbol("rays_index");
+    static Symbol_Ref num_rays_key = make_symbol("nrays");
 
     ray_is_2d_ = rays.ray_is_2d_;
     ray_is_3d_ = rays.ray_is_3d_;
@@ -66,6 +67,11 @@ Rays_Program::Rays_Program(
     else
         throw Exception{cx, stringify(
             "bad parametric shape: call result has no 'rays_index' field: ", r)};
+    if (r->hasfield(num_rays_key))
+        rays_index_fun_ = value_to_function(r->getfield(num_rays_key, cx), cx);
+    else
+        throw Exception{cx, stringify(
+            "bad parametric shape: call result has no 'nrays' field: ", r)};
 }
 
 bool Rays_Program::recognize(Value val, Render_Opts* opts)
@@ -76,6 +82,7 @@ bool Rays_Program::recognize(Value val, Render_Opts* opts)
     static Symbol_Ref rays_direction_key = make_symbol("rays_direction");
     static Symbol_Ref rays_colour_key = make_symbol("rays_colour");
     static Symbol_Ref rays_index_key = make_symbol("rays_index");
+    static Symbol_Ref num_rays_key = make_symbol("nrays");
 
     At_Program cx(*this);
     auto r = val.maybe<Record>();
@@ -93,9 +100,33 @@ bool Rays_Program::recognize(Value val, Render_Opts* opts)
     if (rays_colour_val.is_missing()) return false;
     Value rays_index_val = r->find_field(rays_index_key, cx);
     if (rays_index_val.is_missing()) return false;
+    Value num_rays_val = r->find_field(num_rays_key, cx);
+    if (num_rays_val.is_missing()) return false;
 
     ray_is_2d_ = ray_is_2d_val.to_bool(At_Field("ray_is_2d", cx));
     ray_is_3d_ = ray_is_3d_val.to_bool(At_Field("ray_is_3d", cx));
+    auto ray_list = num_rays_val.to<List>(cx);
+    switch (ray_list->size()) {
+        case 1:
+            std::get<0>(num_rays_) = ray_list->val_at(0).to_int(0, std::numeric_limits<int>::max(), cx);
+            std::get<1>(num_rays_) = 1;
+            std::get<2>(num_rays_) = 1;
+            break;
+        case 2:
+            std::get<0>(num_rays_) = ray_list->val_at(0).to_int(0, std::numeric_limits<int>::max(), cx);
+            std::get<1>(num_rays_) = ray_list->val_at(1).to_int(0, std::numeric_limits<int>::max(), cx);
+            std::get<2>(num_rays_) = 1;
+            break;
+        case 3:
+            std::get<0>(num_rays_) = ray_list->val_at(0).to_int(0, std::numeric_limits<int>::max(), cx);
+            std::get<1>(num_rays_) = ray_list->val_at(1).to_int(0, std::numeric_limits<int>::max(), cx);
+            std::get<2>(num_rays_) = ray_list->val_at(2).to_int(0, std::numeric_limits<int>::max(), cx);
+            break;
+        default:
+            throw Exception(cx, "nrays must be a list with 1 to 3 elements");
+
+    }
+
     if (!ray_is_2d_ && !ray_is_3d_)
         throw Exception(cx,
             "at least one of ray_is_2d and ray_is_3d must be true");

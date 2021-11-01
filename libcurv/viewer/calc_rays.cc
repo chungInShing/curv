@@ -213,8 +213,49 @@ RayCalcResult RayCalc::calculate(Traced_Shape& shape) {
     bool finished = false;
     uint iterations = 1;
     cl_int err = 0;
-    shape.setInitialRays();
     RayCalcRetCode code;
+    shape.setInitialRays();
+    //Ray initialization (if exists)
+    if (shape.calc_init_rays_) {
+        if (auto initprog = compileProgram(shape.clinitprog_, code)) {
+            if(auto kernel = genKernel(initprog.value(), shape.getInitRayKernelName(), code)) {
+                //Tuple of parameters, with host memery obj.
+                std::vector<std::tuple<
+                Traced_Shape::KernelParam,
+                cl_mem>> buffers;
+                for (auto param : shape.getRayInitArgParams()) {
+                     if (auto memObj = createAndLoadBuffer(kernel.value(), param)) {
+                        buffers.push_back(std::make_tuple(param, memObj.value()));
+                     } else {
+                         die("Error creating and loading buffer.");
+                     }
+                }
+                // Queue OpenCL kernel on the list
+                size_t global_item_size = shape.getNumRays(); // Process the entire lists
+                size_t local_item_size = shape.getNumRays();
+                err &= runKernel(kernel.value(), &global_item_size, &local_item_size);
+                //Queue transfer from device to host.
+                for (auto e : buffers) {
+                    auto param = std::get<0>(e);
+                    auto memObj = std::get<1>(e);
+                    err &= readBack(memObj, param);
+                }
+                //Let the calculation finish.
+                //clFlush(command_queue_);
+                clFinish(command_queue_);
+                //Release buffers.
+                for (auto b : buffers)
+                    if (std::get<1>(b) != nullptr) {
+                        clReleaseMemObject(std::get<1>(b));
+                    }
+            } else {
+                std::cout << "Ray initialization kernel failed to build." << std::endl;
+            }
+        } else {
+            std::cout << "Ray initialization program failed to build." << std::endl;
+        }
+    }
+    //Ray propagation.
     if (auto prog = compileProgram(shape.clprog_, code)) {
         if (auto kernel = genKernel(prog.value(), shape.getRayCalcKernelName(), code)) {
             do {

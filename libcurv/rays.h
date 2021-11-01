@@ -10,6 +10,7 @@
 #include <libcurv/vec.h>
 #include <libcurv/shape.h>
 #include <cmath>
+#include <tuple>
 
 
 namespace curv {
@@ -28,6 +29,7 @@ struct Rays_Program
     bool ray_is_2d_;
     bool ray_is_3d_;
     BBox bbox_;
+    std::tuple<unsigned int, unsigned int, unsigned int> num_rays_;
 
     // is_shape is initially false, becomes true after recognize() succeeds.
     bool is_shape() const { return ray_is_2d_ || ray_is_3d_; }

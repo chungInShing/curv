@@ -197,24 +197,24 @@ static const char* DEFAULT_RAY_TRACE =
 
 static const std::vector<std::tuple<std::string, Traced_Shape::VarType, bool, cl_mem_flags>>
     DEFAULT_RAY_INIT_PARAMETER=
-                    { {"i", Traced_Shape::VarType::FLOAT, true, CL_MEM_READ_ONLY},
+                    { {"i", Traced_Shape::VarType::FLOAT3, true, CL_MEM_READ_ONLY},
                       {"io", Traced_Shape::VarType::FLOAT3, true, CL_MEM_WRITE_ONLY},
                       {"id", Traced_Shape::VarType::FLOAT3, true, CL_MEM_WRITE_ONLY},
                       {"ic", Traced_Shape::VarType::FLOAT4, true, CL_MEM_WRITE_ONLY},
                       {"indRatio", Traced_Shape::VarType::FLOAT, true, CL_MEM_WRITE_ONLY}};
 
 static const char* DEFAULT_RAY_INIT =
-                    "__kernel void init_main(__global float* i,\n" //The only variable to input to functions generating initial ray values.
+                    "__kernel void init_main(__global float3* i,\n" //The only variable to input to functions generating initial ray values.
                     "                   __global float3* io,\n" //Initial ray origin.
                     "                   __global float3* id,\n" //Initial ray direction.
                     "                   __global float3* ic,\n" //Initial ray colour.
                     "                   __global float* indRatio\n" //Initial ray index or reflection.
                     "                   ) {\n"
                     "    uint gid = get_global_id(0);\n"
-                    "    io[gid] = rays_origin(vec2(i[gid],0));\n"
-                    "    id[gid] = rays_direction(vec2(i[gid],0));\n"
-                    "    ic[gid] = rays_colour(vec2(i[gid],0));\n"
-                    "    indRatio[gid] = rays_index(vec2(i[gid],0));\n"
+                    "    io[gid] = rays_origin(i[gid]);\n"
+                    "    id[gid] = rays_direction(i[gid]);\n"
+                    "    ic[gid] = rays_colour(i[gid]);\n"
+                    "    indRatio[gid] = rays_index(i[gid]);\n"
                     "}\n"
                     "\n";
 
@@ -239,13 +239,13 @@ void export_clprog(const Shape_Program& shape, const Render_Opts& opts, std::ost
     die("export_clprog: shape is not 2d or 3d");
 }
 
-void export_clprog(const Shape_Program& shape, const Rays_Program& rays, const Render_Opts& opts, std::ostream& out)
+void export_clprog(const Shape_Program& shape, const Rays_Program& rays, const Render_Opts& opts, std::ostream& out, std::ostream& initOut)
 {
     export_clprog(shape, opts, out);
 //    if (rays.ray_is_2d_)
 //        return export_rays_clprog_2d(rays, opts, out);
     if (rays.ray_is_3d_)
-        return export_rays_clprog_3d(rays, opts, out);
+        return export_rays_clprog_3d(rays, opts, initOut);
     die("export_clprog: shape is not 2d or 3d");
 }
 
@@ -269,13 +269,13 @@ void export_rays_clprog_3d(const Rays_Program& rays, const Render_Opts& opts, st
                 << p.second.identifier_ << ";\n";
         }
     }
-    sc.define_function("rays_origin", SC_Type::Num(2), SC_Type::Num(3),
+    sc.define_function("rays_origin", SC_Type::Num(3), SC_Type::Num(3),
         rays.rays_origin_fun_, cx);
-    sc.define_function("rays_direction", SC_Type::Num(2), SC_Type::Num(3),
+    sc.define_function("rays_direction", SC_Type::Num(3), SC_Type::Num(3),
         rays.rays_direction_fun_, cx);
-    sc.define_function("rays_colour", SC_Type::Num(2), SC_Type::Num(3),
+    sc.define_function("rays_colour", SC_Type::Num(3), SC_Type::Num(3),
         rays.rays_colour_fun_, cx);
-    sc.define_function("rays_index", SC_Type::Num(2), SC_Type::Num(),
+    sc.define_function("rays_index", SC_Type::Num(3), SC_Type::Num(),
         rays.rays_index_fun_, cx);
 
     BBox bbox = rays.bbox_;
@@ -398,9 +398,10 @@ Traced_Shape::Traced_Shape(const Shape_Program& shape, const Render_Opts& opts) 
 
 Traced_Shape::Traced_Shape(const Shape_Program& shape, const Rays_Program& rays, const Render_Opts& opts) : Viewed_Shape(shape, opts)
 {
-        std::stringstream clprog;
-        export_clprog(shape, rays, opts, clprog);
+        std::stringstream clprog, clinitprog;
+        export_clprog(shape, rays, opts, clprog, clinitprog);
         clprog_ = clprog.str();
+        clinitprog_ = clinitprog.str();
 
 }
 
@@ -416,10 +417,15 @@ uint Traced_Shape::getVarIndex(const std::vector<std::tuple<std::string, Traced_
     }
     return -1;
 }
+void Traced_Shape::setInitBuffers() {
+    setInitBuffers(numRays_);
+}
 
-void Traced_Shape::setInitBuffers(unsigned int numRays) {
+void Traced_Shape::setInitBuffers(std::tuple<unsigned int, unsigned int, unsigned int> numRays) {
     //clear  argument data.
     argsData_.clear();
+
+    unsigned int totalRays = std::get<0>(numRays) * std::get<1>(numRays) * std::get<2>(numRays);
 
     //Allocate space for data.
     cl_float3 zerofl;
@@ -427,42 +433,54 @@ void Traced_Shape::setInitBuffers(unsigned int numRays) {
     zerofl.y = 0;
     zerofl.z = 0;
 
-    argsData_["i"] = MemDataAttr(std::shared_ptr<cl_float[]>(new cl_float[numRays]),
-                      "i", VarType::FLOAT, sizeof(cl_float) * numRays);
-    argsData_["io"] = MemDataAttr(std::shared_ptr<cl_float3[]>(new cl_float3[numRays]),
-                      "io", VarType::FLOAT3, sizeof(cl_float3) * numRays);
-    argsData_["id"] = MemDataAttr(std::shared_ptr<cl_float3[]>(new cl_float3[numRays]),
-                      "id", VarType::FLOAT3, sizeof(cl_float3) * numRays);
-    argsData_["indRatio"] = MemDataAttr(std::shared_ptr<cl_float[]>(new cl_float[numRays]),
-                      "indRatio", VarType::FLOAT, sizeof(cl_float) * numRays);
-    argsData_["ro"] = MemDataAttr(std::shared_ptr<cl_float3[]>(new cl_float3[numRays]{zerofl}),
-                      "ro", VarType::FLOAT3, sizeof(cl_float3) * numRays);
-    argsData_["rd"] = MemDataAttr(std::shared_ptr<cl_float3[]>(new cl_float3[numRays]{zerofl}),
-                      "rd", VarType::FLOAT3, sizeof(cl_float3) * numRays);
-    argsData_["ivalid"] = MemDataAttr(std::shared_ptr<cl_float[]>(new cl_float[numRays]{1.0}),
-                      "ivalid", VarType::FLOAT, sizeof(cl_float) * numRays);
-    argsData_["rvalid"] = MemDataAttr(std::shared_ptr<cl_float[]>(new cl_float[numRays]{0.0}),
-                      "rvalid", VarType::FLOAT, sizeof(cl_float) * numRays);
+    argsData_["i"] = MemDataAttr(std::shared_ptr<cl_float3[]>(new cl_float3[totalRays]),
+                      "i", VarType::FLOAT3, sizeof(cl_float3) * totalRays);
+    argsData_["io"] = MemDataAttr(std::shared_ptr<cl_float3[]>(new cl_float3[totalRays]),
+                      "io", VarType::FLOAT3, sizeof(cl_float3) * totalRays);
+    argsData_["id"] = MemDataAttr(std::shared_ptr<cl_float3[]>(new cl_float3[totalRays]),
+                      "id", VarType::FLOAT3, sizeof(cl_float3) * totalRays);
+    argsData_["indRatio"] = MemDataAttr(std::shared_ptr<cl_float[]>(new cl_float[totalRays]),
+                      "indRatio", VarType::FLOAT, sizeof(cl_float) * totalRays);
+    argsData_["ro"] = MemDataAttr(std::shared_ptr<cl_float3[]>(new cl_float3[totalRays]{zerofl}),
+                      "ro", VarType::FLOAT3, sizeof(cl_float3) * totalRays);
+    argsData_["rd"] = MemDataAttr(std::shared_ptr<cl_float3[]>(new cl_float3[totalRays]{zerofl}),
+                      "rd", VarType::FLOAT3, sizeof(cl_float3) * totalRays);
+    argsData_["ivalid"] = MemDataAttr(std::shared_ptr<cl_float[]>(new cl_float[totalRays]{1.0}),
+                      "ivalid", VarType::FLOAT, sizeof(cl_float) * totalRays);
+    argsData_["rvalid"] = MemDataAttr(std::shared_ptr<cl_float[]>(new cl_float[totalRays]{0.0}),
+                      "rvalid", VarType::FLOAT, sizeof(cl_float) * totalRays);
     argsData_["time"] = MemDataAttr(std::shared_ptr<cl_float[]>(new cl_float[1]{0}),
                       "time", VarType::FLOAT, sizeof(cl_float) * 1);
-    argsData_["ic"] = MemDataAttr(std::shared_ptr<cl_float3[]>(new cl_float3[numRays]),
-                      "ic", VarType::FLOAT3, sizeof(cl_float3) * numRays);
+    argsData_["ic"] = MemDataAttr(std::shared_ptr<cl_float3[]>(new cl_float3[totalRays]),
+                      "ic", VarType::FLOAT3, sizeof(cl_float3) * totalRays);
     //Write initialRays.
-    for (unsigned int i=0; i<numRays;i++) {
-        //Evenly spread i from 0.0 to 1.0.
-        std::reinterpret_pointer_cast<cl_float[]>(argsData_["i"].data_).get()[i] = (float)i/fmax(1.0, (float)(numRays - 1));
-        std::reinterpret_pointer_cast<cl_float[]>(argsData_["ivalid"].data_).get()[i] = 1.0;
-        std::reinterpret_pointer_cast<cl_float[]>(argsData_["rvalid"].data_).get()[i] = 0.0;
+    unsigned int i = 0;
+    for (unsigned int a=0; a< std::get<0>(numRays);a++) {
+        for (unsigned int b=0; b< std::get<1>(numRays);b++) {
+            for (unsigned int c=0; c< std::get<2>(numRays);c++) {
+                //Evenly spread i from 0.0 to 1.0.
+                std::reinterpret_pointer_cast<cl_float3[]>(argsData_["i"].data_).get()[i].x =
+                        (float)a/fmax(1.0, (float)(std::get<0>(numRays) - 1));
+                std::reinterpret_pointer_cast<cl_float3[]>(argsData_["i"].data_).get()[i].y =
+                        (float)b/fmax(1.0, (float)(std::get<1>(numRays) - 1));
+                std::reinterpret_pointer_cast<cl_float3[]>(argsData_["i"].data_).get()[i].z =
+                        (float)c/fmax(1.0, (float)(std::get<2>(numRays) - 1));
+                std::reinterpret_pointer_cast<cl_float[]>(argsData_["ivalid"].data_).get()[i] = 1.0;
+                std::reinterpret_pointer_cast<cl_float[]>(argsData_["rvalid"].data_).get()[i] = 0.0;
+                i++;
+            }
+        }
     }
     numRays_ = numRays;
     finished_ = false;
 }
 
+
 void Traced_Shape::setInitialRays(const std::vector<Ray>& inputRays)
 {
 
     unsigned int numRays = inputRays.size();
-    setInitBuffers(numRays);
+    setInitBuffers(std::tuple<unsigned int, unsigned int, unsigned int>(numRays, 1, 1));
     //Write initialRays.
     for (unsigned int i=0; i<numRays;i++) {
         cl_float3 o, d, c;
@@ -493,27 +511,32 @@ void Traced_Shape::setInitialRays() {
 
     //(Re)create input and output memory objects. Free existing objects.
     //Set input memory objects with initial ray values.
-    std::vector<Ray> rays;
-    rays.push_back(Ray{glm::vec3(-3.0,-1.0,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 2.0});
-    rays.push_back(Ray{glm::vec3(-3.0,-0.75,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 2.0});
-    rays.push_back(Ray{glm::vec3(-3.0,-0.5,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 2.0});
-    rays.push_back(Ray{glm::vec3(-3.0,-0.25,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 2.0});
-    rays.push_back(Ray{glm::vec3(-3.0,0,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 2.0});
-    rays.push_back(Ray{glm::vec3(-3.0,1.0,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 2.0});
-    rays.push_back(Ray{glm::vec3(-3.0,0.75,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 2.0});
-    rays.push_back(Ray{glm::vec3(-3.0,0.5,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 2.0});
-    rays.push_back(Ray{glm::vec3(-3.0,0.25,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 2.0});
-    setInitialRays(rays);
+    if (getNumRays() == 0) {
+        std::vector<Ray> rays;
+        rays.push_back(Ray{glm::vec3(-3.0,-1.0,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 2.0});
+        rays.push_back(Ray{glm::vec3(-3.0,-0.75,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 2.0});
+        rays.push_back(Ray{glm::vec3(-3.0,-0.5,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 2.0});
+        rays.push_back(Ray{glm::vec3(-3.0,-0.25,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 2.0});
+        rays.push_back(Ray{glm::vec3(-3.0,0,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 2.0});
+        rays.push_back(Ray{glm::vec3(-3.0,1.0,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 2.0});
+        rays.push_back(Ray{glm::vec3(-3.0,0.75,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 2.0});
+        rays.push_back(Ray{glm::vec3(-3.0,0.5,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 2.0});
+        rays.push_back(Ray{glm::vec3(-3.0,0.25,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 2.0});
+        setInitialRays(rays);
+    } else {
+        setInitBuffers();
+        calc_init_rays_ = true;
+    }
     finished_ = false;
 }
 
 bool Traced_Shape::propagate() {
-    bool ended = finished_ | (numRays_ <= 0);
+    bool ended = finished_ | (getNumRays() <= 0);
     float far_away = 10000;
     if (!ended) {
         //std::cout << "Propagate:" << std::endl;
         bool no_valid_rrays = true;
-        for (uint i=0; i < numRays_; i++) {
+        for (uint i=0; i < getNumRays(); i++) {
             //Incident ray is valid?
             bool is_i_valid = (std::reinterpret_pointer_cast<cl_float[]>(argsData_["ivalid"].data_).get()[i] > 0.0);
             //Reflected ray is valid?

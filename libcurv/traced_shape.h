@@ -58,10 +58,11 @@ struct Traced_Shape : Viewed_Shape
     };
 
 
-    std::string clprog_;
+    std::string clprog_, clinitprog_;
 
-    uint numRays_ = 0;
+    std::tuple<unsigned int, unsigned int, unsigned int> numRays_;
     bool finished_ = 0;
+    bool calc_init_rays_ = 0;
     std::vector<Ray> rays_;
 
     Traced_Shape() {};
@@ -79,10 +80,11 @@ struct Traced_Shape : Viewed_Shape
     void setInitialRays(const std::vector<Ray>& inputRays);
     void setInitialRays();
 
-    void setInitBuffers(unsigned int numRays);
+    void setInitBuffers();
+    void setInitBuffers(std::tuple<unsigned int, unsigned int, unsigned int> numRays);
 
     //Get number of rays.
-    uint getNumRays() { return numRays_; }
+    unsigned int getNumRays() { return std::get<0>(numRays_) * std::get<1>(numRays_) * std::get<2>(numRays_); }
     //Get result rays.
     const std::vector<Ray> getResultRays() { return rays_; };
     //Propagate ray calculation, returns true if calculation is finished.
