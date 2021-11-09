@@ -178,6 +178,15 @@ poll_file(
                 curv::Program prog{std::move(file), *sys};
                 prog.compile();
                 auto value = prog.eval();
+#ifdef CALC_RAY
+                curv::Traced_GPU_Program gprog{prog};
+                if (gprog.recognize(value, *opts)) {
+                    print_shape(gprog);
+                    live_view_server.display_shape(std::move(gprog.vshape_), std::move(gprog.tshape_));
+                } else {
+                    std::cout << value << "\n";
+                }
+#else
                 curv::GPU_Program gprog{prog};
                 if (gprog.recognize(value, *opts)) {
                     print_shape(gprog);
@@ -185,6 +194,7 @@ poll_file(
                 } else {
                     std::cout << value << "\n";
                 }
+#endif
             } catch (std::exception& e) {
                 sys->error(e);
             }

@@ -180,7 +180,12 @@ public:
             }
             if (msg.id_ == Request::k_display_shape) {
                 assert(!request_shape_.empty());
+#ifdef CALC_RAY
+                assert(!t_request_shape_.empty());
+                view_.set_shape(std::move(request_shape_), std::move(t_request_shape_));
+#else
                 view_.set_shape(std::move(request_shape_));
+#endif
                 msg.reply();
                 view_.open();
                 do {
@@ -194,7 +199,12 @@ public:
                         }
                         else if (imsg.id_ == Request::k_display_shape) {
                             assert(!request_shape_.empty());
+#ifdef CALC_RAY
+                            assert(!t_request_shape_.empty());
+                            view_.set_shape(std::move(request_shape_), std::move(t_request_shape_));
+#else
                             view_.set_shape(std::move(request_shape_));
+#endif
                             imsg.reply();
                         }
                         else

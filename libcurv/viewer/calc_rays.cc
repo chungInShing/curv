@@ -293,10 +293,12 @@ RayCalcResult RayCalc::calculate(Traced_Shape& shape) {
                 iterations++;
             } while (!finished && iterations < param_.maxIter);
         } else {
-            die ("Error creating kernel");
+            //die ("Error creating kernel");
+            std::cout << "Error creating kernel" << std::endl;
         }
     } else {
-        die ("Error creating program");
+        //die ("Error creating program");
+        std::cout << "Error creating program" << std::endl;
     }
     result.rays = shape.getResultRays();
     result.numInitialRays = shape.getNumRays();

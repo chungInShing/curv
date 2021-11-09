@@ -6,6 +6,9 @@
 #define SHAPES_H
 
 #include <libcurv/gpu_program.h>
+#ifdef CALC_RAY
+#include <libcurv/traced_gpu_program.h>
+#endif
 
 void print_shape(const curv::Shape_Program&);
 void print_shape(const curv::GPU_Program&);
