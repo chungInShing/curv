@@ -103,7 +103,7 @@ std::optional<cl_program>  RayCalc::compileProgram(const std::string& source, Ra
             code = RayCalcRetCode::COMPILE_ERROR;
             std::cout << "Source openCL:" <<
                 "-------------------" << std::endl << std::endl <<
-                prog << "-------------------" << std::endl;
+                source << "-------------------" << std::endl;
         } else {
             std::cout << "Program built successfully." << std::endl;
             code = RayCalcRetCode::OK;

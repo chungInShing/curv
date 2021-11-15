@@ -36,7 +36,8 @@ struct System;
 enum class SC_Target
 {
     glsl,   // output GLSL code
-    cpp     // output C++ code using GLM library
+    cpp,     // output C++ code using GLM library
+    opencl11 // output to OpenCL 1.1
 };
 
 struct Op_Hash

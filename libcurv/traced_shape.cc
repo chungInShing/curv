@@ -9,6 +9,7 @@
 #include <libcurv/glsl.h>
 #include <libcurv/die.h>
 #include <memory>
+#include <ostream>
 #include <tuple>
 #include <iostream>
 
@@ -31,6 +32,13 @@ static const char* TEST_KERNEL =
 static const char* DEFAULT_HEADER = "#define vec2 float2\n"
                                     "#define vec3 float3\n"
                                     "#define vec4 float4\n"
+                                    "#define bool int\n"
+                                    "#define bvec2 int2\n"
+                                    "#define bvec3 int3\n"
+                                    "#define bvec4 int4\n"
+                                    "#define uvec2 uint2\n"
+                                    "#define uvec3 uint3\n"
+                                    "#define uvec4 uint4\n"
                                     "#ifdef abs\n"
                                     "#undef abs\n"
                                     "#endif\n"
@@ -51,6 +59,36 @@ static const char* DEFAULT_HEADER = "#define vec2 float2\n"
                                     "#define float4_3(X, Y, Z) ((float4)((X), (Y), (Z), (Z)))\n"
                                     "#define float4_2(X, Y) ((float4)((X), (Y), (Y), (Y)))\n"
                                     "#define float4_1(X) ((float4)((X), (X), (X), (X)))\n"
+                                    "#define int2(...) GET_MACRO(__VA_ARGS__,int2_4, int2_3, int2_2, int2_1)(__VA_ARGS__)\n"
+                                    "#define int3(...) GET_MACRO(__VA_ARGS__,int3_4, int3_3, int3_2, int3_1)(__VA_ARGS__)\n"
+                                    "#define int4(...) GET_MACRO(__VA_ARGS__,int4_4, int4_3, int4_2, int4_1)(__VA_ARGS__)\n"
+                                    "#define int2_4(X, Y, Z, W) ((int2)((X), (Y)))\n"
+                                    "#define int2_3(X, Y, Z) ((int2)((X), (Y)))\n"
+                                    "#define int2_2(X, Y) ((int2)((X), (Y)))\n"
+                                    "#define int2_1(X) ((int2)((X), (X)))\n"
+                                    "#define int3_4(X, Y, Z, W) ((int3)((X), (Y), (Z)))\n"
+                                    "#define int3_3(X, Y, Z) ((int3)((X), (Y), (Z)))\n"
+                                    "#define int3_2(X, Y) ((int3)((X), (Y), (Y)))\n"
+                                    "#define int3_1(X) ((int3)((X), (X), (X)))\n"
+                                    "#define int4_4(X, Y, Z, W) ((int4)((X), (Y), (Z), (W)))\n"
+                                    "#define int4_3(X, Y, Z) ((int4)((X), (Y), (Z), (Z)))\n"
+                                    "#define int4_2(X, Y) ((int4)((X), (Y), (Y), (Y)))\n"
+                                    "#define int4_1(X) ((int4)((X), (X), (X), (X)))\n"
+                                    "#define uint2(...) GET_MACRO(__VA_ARGS__,uint2_4, uint2_3, uint2_2, uint2_1)(__VA_ARGS__)\n"
+                                    "#define uint3(...) GET_MACRO(__VA_ARGS__,uint3_4, uint3_3, uint3_2, uint3_1)(__VA_ARGS__)\n"
+                                    "#define uint4(...) GET_MACRO(__VA_ARGS__,uint4_4, uint4_3, uint4_2, uint4_1)(__VA_ARGS__)\n"
+                                    "#define uint2_4(X, Y, Z, W) ((uint2)((X), (Y)))\n"
+                                    "#define uint2_3(X, Y, Z) ((uint2)((X), (Y)))\n"
+                                    "#define uint2_2(X, Y) ((uint2)((X), (Y)))\n"
+                                    "#define uint2_1(X) ((uint2)((X), (X)))\n"
+                                    "#define uint3_4(X, Y, Z, W) ((uint3)((X), (Y), (Z)))\n"
+                                    "#define uint3_3(X, Y, Z) ((uint3)((X), (Y), (Z)))\n"
+                                    "#define uint3_2(X, Y) ((uint3)((X), (Y), (Y)))\n"
+                                    "#define uint3_1(X) ((uint3)((X), (X), (X)))\n"
+                                    "#define uint4_4(X, Y, Z, W) ((uint4)((X), (Y), (Z), (W)))\n"
+                                    "#define uint4_3(X, Y, Z) ((uint4)((X), (Y), (Z), (Z)))\n"
+                                    "#define uint4_2(X, Y) ((uint4)((X), (Y), (Y), (Y)))\n"
+                                    "#define uint4_1(X) ((uint4)((X), (X), (X), (X)))\n"
                                     "#define const __constant\n"
                                     "#define in __constant\n"
                                     "#define __const_global\n"
@@ -230,6 +268,47 @@ void export_clprog_3d(const Shape_Program& shape, const Render_Opts& opts, std::
 void export_rays_clprog_2d(const Rays_Program& rays, const Render_Opts& opts, std::ostream& out);
 void export_rays_clprog_3d(const Rays_Program& rays, const Render_Opts& opts, std::ostream& out);
 
+void opencl_trace_function_export(const Shape_Program& shape, std::ostream& out) {
+    SC_Compiler sc(out, SC_Target::opencl11, shape.system());
+    At_Program cx(shape);
+
+    out << glsl_header;
+    if (shape.viewed_shape_) {
+        // output uniform variables for parametric shape
+        for (auto& p : shape.viewed_shape_->param_) {
+            out << "uniform " << p.second.pconfig_.sctype_ << " "
+                << p.second.identifier_ << ";\n";
+        }
+    }
+    sc.define_function("dist", SC_Type::Num(4), SC_Type::Num(),
+        shape.dist_fun_, cx);
+    sc.define_function("colour", SC_Type::Num(4), SC_Type::Num(3),
+        shape.colour_fun_, cx);
+}
+
+void opencl_ray_init_function_export(const Rays_Program& rays, std::ostream& out) {
+    SC_Compiler sc(out, SC_Target::opencl11, rays.system());
+    At_Program cx(rays);
+
+    out << glsl_header;
+    if (rays.traced_shape_) {
+        // output uniform variables for parametric shape
+        for (auto& p : rays.traced_shape_->param_) {
+            out << "uniform " << p.second.pconfig_.sctype_ << " "
+                << p.second.identifier_ << ";\n";
+        }
+    }
+    sc.define_function("rays_origin", SC_Type::Num(3), SC_Type::Num(3),
+        rays.rays_origin_fun_, cx);
+    sc.define_function("rays_direction", SC_Type::Num(3), SC_Type::Num(3),
+        rays.rays_direction_fun_, cx);
+    sc.define_function("rays_colour", SC_Type::Num(3), SC_Type::Num(3),
+        rays.rays_colour_fun_, cx);
+    sc.define_function("rays_index", SC_Type::Num(3), SC_Type::Num(),
+        rays.rays_index_fun_, cx);
+
+}
+
 void export_clprog(const Shape_Program& shape, const Render_Opts& opts, std::ostream& out)
 {
     if (shape.is_2d_)
@@ -258,25 +337,7 @@ void export_rays_clprog_3d(const Rays_Program& rays, const Render_Opts& opts, st
     out <<
         DEFAULT_HEADER;
 
-    SC_Compiler sc(out, SC_Target::glsl, rays.system());
-    At_Program cx(rays);
-
-    out << glsl_header;
-    if (rays.traced_shape_) {
-        // output uniform variables for parametric shape
-        for (auto& p : rays.traced_shape_->param_) {
-            out << "uniform " << p.second.pconfig_.sctype_ << " "
-                << p.second.identifier_ << ";\n";
-        }
-    }
-    sc.define_function("rays_origin", SC_Type::Num(3), SC_Type::Num(3),
-        rays.rays_origin_fun_, cx);
-    sc.define_function("rays_direction", SC_Type::Num(3), SC_Type::Num(3),
-        rays.rays_direction_fun_, cx);
-    sc.define_function("rays_colour", SC_Type::Num(3), SC_Type::Num(3),
-        rays.rays_colour_fun_, cx);
-    sc.define_function("rays_index", SC_Type::Num(3), SC_Type::Num(),
-        rays.rays_index_fun_, cx);
+    opencl_ray_init_function_export(rays, out);
 
     BBox bbox = rays.bbox_;
     if (bbox.empty2() || bbox.infinite2()) {
@@ -312,7 +373,7 @@ void export_clprog_2d(const Shape_Program& shape, const Render_Opts& opts, std::
         <<
         DEFAULT_IS_REFRACTION;
 
-    glsl_function_export(shape, out);
+    opencl_trace_function_export(shape, out);
 
     BBox bbox = shape.bbox_;
     if (bbox.empty2() || bbox.infinite2()) {
@@ -357,7 +418,7 @@ void export_clprog_3d(const Shape_Program& shape, const Render_Opts& opts, std::
         <<
         DEFAULT_IS_REFRACTION;
 
-    glsl_function_export(shape, out);
+    opencl_trace_function_export(shape, out);
 
     BBox bbox = shape.bbox_;
     if (bbox.empty3() || bbox.infinite3()) {

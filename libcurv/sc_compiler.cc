@@ -284,6 +284,9 @@ SC_Value sc_eval_const(SC_Frame& f, Value val, const Phrase& syntax)
         if (f.sc_.target_ == SC_Target::cpp) {
             f.sc_.out() << "  " << ety << " " << result << "[] = {"
                 << *initstr << "};\n";
+        } else if(f.sc_.target_ == SC_Target::opencl11) {
+            f.sc_.out() << "  " << ety << " " << result << "[] = {"
+                << *initstr << "};\n";
         } else {
             f.sc_.out() << "  " << ty << " " << result << " = " << ty << "("
                 << *initstr << ");\n";
@@ -595,7 +598,7 @@ SC_Value sc_eval_index_expr(SC_Value array, Operation& index, SC_Frame& f)
                 f.sc_.newvalue(
                     SC_Type::Vec(array.type.elem_type(), list->size()));
             f.sc_.out() << "  " << result.type << " "<< result<<" = ";
-            if (f.sc_.target_ == SC_Target::glsl) {
+            if (f.sc_.target_ == SC_Target::glsl || f.sc_.target_ == SC_Target::opencl11) {
                 // use GLSL swizzle syntax: v.xyz
                 f.sc_.out() <<array<<"."<<swizzle;
             } else {
@@ -641,8 +644,13 @@ SC_Value sc_eval_index_expr(SC_Value array, Operation& index, SC_Frame& f)
     }
     auto ix = sc_eval_expr(f, index, SC_Type::Num());
     SC_Value result = f.sc_.newvalue(array.type.elem_type());
-    f.sc_.out() << "  " << result.type << " " << result << " = "
-             << array << "[int(" << ix << ")];\n";
+    if (f.sc_.target_ == SC_Target::opencl11) {
+        f.sc_.out() << "  " << result.type << " " << result << " = "
+                 << array << "[convert_int_rtz(" << ix << ")];\n";
+    } else {
+        f.sc_.out() << "  " << result.type << " " << result << " = "
+                 << array << "[int(" << ix << ")];\n";
+    }
     return result;
 }
 
@@ -660,19 +668,32 @@ SC_Value sc_eval_index2_expr(
         // so we emulate this type using a 1D array.
         // Index value must be [i,j], can't use a single index.
         SC_Value result = f.sc_.newvalue(array.type.plex_array_base());
-        f.sc_.out() << "  " << result.type << " " << result << " = " << array
-                 << "[int(" << ix1 << ")*" << array.type.plex_array_dim(1)
-                 << "+" << "int(" << ix2 << ")];\n";
+        if (f.sc_.target_ == SC_Target::opencl11) {
+            f.sc_.out() << "  " << result.type << " " << result << " = " << array
+                     << "[convert_int_rtz(" << ix1 << ")*" << array.type.plex_array_dim(1)
+                     << "+" << "convert_int_rtz(" << ix2 << ")];\n";
+        } else {
+            f.sc_.out() << "  " << result.type << " " << result << " = " << array
+                     << "[int(" << ix1 << ")*" << array.type.plex_array_dim(1)
+                     << "+" << "int(" << ix2 << ")];\n";
+        }
         return result;
       }
     case 1:
         if (array.type.plex_array_base().rank() == 1) {
             // 1D array of vector.
             SC_Value result = f.sc_.newvalue(SC_Type::Num());
-            f.sc_.out() << "  " << result.type << " " << result << " = "
-                << array
-                << "[int(" << ix1 << ")]"
-                << "[int(" << ix2 << ")];\n";
+            if (f.sc_.target_ == SC_Target::opencl11) {
+                f.sc_.out() << "  " << result.type << " " << result << " = "
+                    << array
+                    << "[convert_int_rtz(" << ix1 << ")]"
+                    << "[convert_int_rtz(" << ix2 << ")];\n";
+            } else {
+                f.sc_.out() << "  " << result.type << " " << result << " = "
+                    << array
+                    << "[int(" << ix1 << ")]"
+                    << "[int(" << ix2 << ")];\n";
+            }
             return result;
         }
     }
@@ -693,9 +714,15 @@ SC_Value sc_eval_index3_expr(
         auto ix3 = sc_eval_expr(f, op_ix3, SC_Type::Num());
         SC_Value result =
             f.sc_.newvalue(array.type.plex_array_base().elem_type());
-        f.sc_.out() << "  " << result.type << " " << result << " = " << array
-                 << "[int(" << ix1 << ")*" << array.type.plex_array_dim(1)
-                 << "+" << "int(" << ix2 << ")][int(" << ix3 << ")];\n";
+        if (f.sc_.target_ == SC_Target::opencl11) {
+            f.sc_.out() << "  " << result.type << " " << result << " = " << array
+                     << "[convert_int_rtz(" << ix1 << ")*" << array.type.plex_array_dim(1)
+                     << "+" << "convert_int_rtz(" << ix2 << ")][convert_int_rtz(" << ix3 << ")];\n";
+        } else {
+            f.sc_.out() << "  " << result.type << " " << result << " = " << array
+                     << "[int(" << ix1 << ")*" << array.type.plex_array_dim(1)
+                     << "+" << "int(" << ix2 << ")][int(" << ix3 << ")];\n";
+        }
         return result;
     }
     throw Exception(acx, "3 indexes (a[i,j,k]) not supported for this array");
@@ -926,7 +953,9 @@ SC_Value sc_vec_element(SC_Frame& f, SC_Value vec, int i)
 {
     SC_Value r = f.sc_.newvalue(vec.type.elem_type());
 
-    if (f.sc_.target_ == SC_Target::glsl && vec.type.is_num_vec()) {
+    if ((f.sc_.target_ == SC_Target::glsl && vec.type.is_num_vec()) ||
+            (f.sc_.target_ == SC_Target::opencl11 &&
+             (vec.type.is_num_vec() || vec.type.is_bool_or_vec()))) {
         //use gl_index_letters instread of indices if num vec types are used.
         const char* arg2 = nullptr;
         if (i == 0.0)
