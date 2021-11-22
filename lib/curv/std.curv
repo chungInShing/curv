@@ -1677,22 +1677,62 @@ colour_picker =
   };
 
 /// LIGHT SOURCES ///
-point_light _s shape =
-    let s = if (is_vec2 _s) [..._s, 1]
-            else do assert(is_vec3(_s) && shape.is_3d) in _s;
+
+///plane_light [plane_center ///
+///            plane_vector1 (magnitude is half of plane size) ///
+///            plane_vector2 (magnitude is half of plane size) ///
+///            density (number of rays / 2 for each axis) ///
+///            ray_direction_vector] ///
+plane_light [_c, _v1, _v2, _s, _d] shape =
+    let c = if (is_vec2 _c) [..._c, 1]
+            else do assert(is_vec3(_c) && shape.is_3d) in _c;
+        v1 = if (is_vec2 _v1) [..._v1, 1]
+            else do assert(is_vec3(_v1) && shape.is_3d) in _v1;
+        v2 = if (is_vec2 _v2) [..._v2, 1]
+            else do assert(is_vec3(_v2) && shape.is_3d) in _v2;
+        s = if (is_num _s) [..._s, 1]
+            else do assert(is_vec2(_s) && shape.is_3d) in _s;
+        d = if (is_vec2 _d) [..._d, 1]
+            else do assert(is_vec3(_d) && shape.is_3d) in _d;
     in make_shape {
         dist : shape.dist,
         colour : shape.colour,
         bbox : shape.bbox,
-        rays_origin[_,_,_] : s,
-        rays_direction[_,_,_] : [1, 0, 0],
+        rays_origin[x,y,_] : c + v1 * 2 * (x - 0.5) + v2 * 2 * (y - 0.5),
+        rays_direction[_,_,_] : d,
         rays_colour : shape.rays_colour,
         rays_index : shape.rays_index,
         ray_is_2d : shape.is_2d,
         ray_is_3d : shape.is_3d,
         is_2d : shape.is_2d,
         is_3d : shape.is_3d,
+        nrays : [s@X, s@Y, 1],
     };
+
+///point_light [point_center ///
+///             density (vec2) ///
+point_light [_o, _d] shape =
+    let o = if (is_vec2 _o) [..._o, 1]
+            else do assert(is_vec3(_o) && shape.is_3d) in _o;
+        d = if (is_num _d) [_d, 1]
+            else do assert(is_vec2(_d) && shape.is_3d) in _d;
+    in make_shape {
+        dist : shape.dist,
+        colour : shape.colour,
+        bbox : shape.bbox,
+        rays_origin[_,_,_] : o,
+        rays_direction[x,y,_] : [cos(x * 2 * pi) * cos(y * 2 * pi),
+                                 cos(x * 2 * pi) * sin(y * 2 * pi),
+                                 sin(x * 2 * pi)],
+        rays_colour : shape.rays_colour,
+        rays_index : shape.rays_index,
+        ray_is_2d : shape.is_2d,
+        ray_is_3d : shape.is_3d,
+        is_2d : shape.is_2d,
+        is_3d : shape.is_3d,
+        nrays : [d@X, d@Y, 1],
+    };
+
 ray_index _s shape =
     let s = do assert(is_num(_s)) in _s;
     in make_shape {
@@ -1702,15 +1742,16 @@ ray_index _s shape =
         rays_origin : shape.rays_origin,
         rays_direction : shape.rays_direction,
         rays_colour : shape.rays_colour,
-        rays_index[_,_,_] : [s],
+        rays_index[_,_,_] : s,
         ray_is_2d : shape.is_2d,
         ray_is_3d : shape.is_3d,
         is_2d : shape.is_2d,
         is_3d : shape.is_3d,
+        nrays : shape.nrays,
     };
 
 ray_colour _s shape =
-    let s = do assert(is_vec3(_s)) in [..._s, 1];
+    let s = do assert(is_vec3(_s)) in _s;
     in make_shape {
         dist : shape.dist,
         colour : shape.colour,
@@ -1723,5 +1764,6 @@ ray_colour _s shape =
         ray_is_3d : shape.is_3d,
         is_2d : shape.is_2d,
         is_3d : shape.is_3d,
+        nrays : shape.nrays,
     };
 }

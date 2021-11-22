@@ -463,6 +463,7 @@ Traced_Shape::Traced_Shape(const Shape_Program& shape, const Rays_Program& rays,
         export_clprog(shape, rays, opts, clprog, clinitprog);
         clprog_ = clprog.str();
         clinitprog_ = clinitprog.str();
+        numRays_ = rays.num_rays_;
 
 }
 
@@ -574,15 +575,15 @@ void Traced_Shape::setInitialRays() {
     //Set input memory objects with initial ray values.
     if (getNumRays() == 0) {
         std::vector<Ray> rays;
-        rays.push_back(Ray{glm::vec3(-3.0,-1.0,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 2.0});
-        rays.push_back(Ray{glm::vec3(-3.0,-0.75,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 2.0});
-        rays.push_back(Ray{glm::vec3(-3.0,-0.5,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 2.0});
-        rays.push_back(Ray{glm::vec3(-3.0,-0.25,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 2.0});
-        rays.push_back(Ray{glm::vec3(-3.0,0,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 2.0});
-        rays.push_back(Ray{glm::vec3(-3.0,1.0,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 2.0});
-        rays.push_back(Ray{glm::vec3(-3.0,0.75,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 2.0});
-        rays.push_back(Ray{glm::vec3(-3.0,0.5,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 2.0});
-        rays.push_back(Ray{glm::vec3(-3.0,0.25,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 2.0});
+        rays.push_back(Ray{glm::vec3(-3.0,-1.0,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 1.5});
+        rays.push_back(Ray{glm::vec3(-3.0,-0.75,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 1.5});
+        rays.push_back(Ray{glm::vec3(-3.0,-0.5,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 1.5});
+        rays.push_back(Ray{glm::vec3(-3.0,-0.25,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 1.5});
+        rays.push_back(Ray{glm::vec3(-3.0,0,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 1.5});
+        rays.push_back(Ray{glm::vec3(-3.0,1.0,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 1.5});
+        rays.push_back(Ray{glm::vec3(-3.0,0.75,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 1.5});
+        rays.push_back(Ray{glm::vec3(-3.0,0.5,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 1.5});
+        rays.push_back(Ray{glm::vec3(-3.0,0.25,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 1.5});
         setInitialRays(rays);
     } else {
         setInitBuffers();
