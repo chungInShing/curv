@@ -148,21 +148,35 @@ Viewer::set_shape(Viewed_Shape shape, Traced_Shape tshape)
     }
 #ifdef MULTIPASS_RENDER
     fpVbo_ = mesh.getVbo();
-       //Find bbox_min, bbox_max definition statements.
-        std::string bbox;
-        std::istringstream iss(shape_.frag_);
-        for (std::string line; std::getline(iss, line); )
-        {
-            if (line.find("const vec3 bbox_min") != std::string::npos
-               || line.find("const vec3 bbox_max") != std::string::npos) {
-                bbox += line + "\n";
-            }
+    //Find bbox_min, bbox_max definition statements.
+    std::string bbox_str;
+    std::istringstream iss(shape_.frag_);
+    bool is_2d = false;
+    bool is_3d = false;
+    for (std::string line; std::getline(iss, line); )
+    {
+        if (line.find("const vec3 bbox_min") != std::string::npos
+           || line.find("const vec3 bbox_max") != std::string::npos) {
+            bbox_str += line + "\n";
+            is_3d = true;
         }
+        if (line.find("const vec4 bbox") != std::string::npos) {
+            bbox_str += line + "\n";
+            is_2d = true;
+        }
+    }
+    if (is_3d) {
+        bbox_str += "#define BBOX_3D\n";
+    } else if(is_2d) {
+        bbox_str += "#define BBOX_2D\n";
+    } else {
+        die("Error parsing frag shader code. No bounding box values detected.");
+    }
+
         if (is_open()) {
             fpShader_.detach(GL_FRAGMENT_SHADER | GL_VERTEX_SHADER);
             if (!fpShader_.load(fpVbo_->getVertexLayout()->getDefaultFragShader(),
-                                fpVbo_->getVertexLayout()->getDefaultFPVertShader(bbox),
-                                config_.verbose_))
+                                fpVbo_->getVertexLayout()->getDefaultFPVertShader(bbox_str), config_.verbose_))
                 error_ = true;
         }
 #endif
@@ -453,17 +467,32 @@ void Viewer::setup()
         fpVbo_ = mesh.getVbo();
     }
     //Find bbox_min, bbox_max definition statements.
-    std::string bbox;
+    std::string bbox_str;
     std::istringstream iss(shape_.frag_);
+    bool is_2d = false;
+    bool is_3d = false;
     for (std::string line; std::getline(iss, line); )
     {
         if (line.find("const vec3 bbox_min") != std::string::npos
            || line.find("const vec3 bbox_max") != std::string::npos) {
-            bbox += line + "\n";
+            bbox_str += line + "\n";
+            is_3d = true;
+        }
+        if (line.find("const vec4 bbox") != std::string::npos) {
+            bbox_str += line + "\n";
+            is_2d = true;
         }
     }
+    if (is_3d) {
+        bbox_str += "#define BBOX_3D\n";
+    } else if(is_2d) {
+        bbox_str += "#define BBOX_2D\n";
+    } else {
+        die("Error parsing frag shader code. No bounding box values detected.");
+    }
+
     if (!fpShader_.load(fpVbo_->getVertexLayout()->getDefaultFragShader(),
-                        fpVbo_->getVertexLayout()->getDefaultFPVertShader(bbox),
+                        fpVbo_->getVertexLayout()->getDefaultFPVertShader(bbox_str),
                         config_.verbose_))
         error_ = true;
     glGenTextures(1, &fpTex_);

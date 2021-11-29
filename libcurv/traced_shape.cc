@@ -365,8 +365,13 @@ void export_clprog_2d(const Shape_Program& shape, const Render_Opts& opts, std::
     return;
 #endif
     out <<
-        DEFAULT_HEADER
-        <<
+        DEFAULT_HEADER;
+
+    out <<
+        "const int ray_max_iter = " << opts.ray_max_iter_ << ";\n"
+        "const float ray_max_depth = " << dfmt(opts.ray_max_depth_, dfmt::EXPR) << ";\n";
+
+    out <<
         DEFAULT_REFLECT
         <<
         DEFAULT_REFRACTION
