@@ -23,6 +23,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/matrix_transform_2d.hpp>
 #include <glm/gtx/rotate_vector.hpp>
+#include <glm/gtx/string_cast.hpp>
 
 #include "scale_picker.h"
 #include "shapes.h"
@@ -644,6 +645,7 @@ void Viewer::onScroll(float _yoffset)
         // zoom view3d
         u_eye3d_ = u_centre3d_ + (u_eye3d_ - u_centre3d_)*z;
     }
+
 }
 
 void Viewer::onMouseDrag(float _x, float _y, int _button)
