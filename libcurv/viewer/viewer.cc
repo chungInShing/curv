@@ -143,8 +143,8 @@ Viewer::set_shape(Viewed_Shape shape, Traced_Shape tshape)
             //          << ")" << std::endl;
             mesh.addVertex(r.pos);
             mesh.addVertex(r.pos + r.dir);
-            mesh.addColor(glm::vec4(1.0, 1.0, 1.0, 1.0));
-            mesh.addColor(glm::vec4(1.0, 1.0, 1.0, 1.0));
+            mesh.addColor(r.colour);
+            mesh.addColor(r.colour);
         }
     }
 #ifdef MULTIPASS_RENDER
@@ -459,8 +459,8 @@ void Viewer::setup()
                 //          << ")" << std::endl;
                 mesh.addVertex(r.pos);
                 mesh.addVertex(r.pos + r.dir);
-                mesh.addColor(glm::vec4(1.0, 1.0, 1.0, 1.0));
-                mesh.addColor(glm::vec4(1.0, 1.0, 1.0, 1.0));
+                mesh.addColor(r.colour);
+                mesh.addColor(r.colour);
             }
         }
 #endif

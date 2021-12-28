@@ -183,6 +183,33 @@ static const char* DEFAULT_CALC_NORMAL =
        //"    */\n"
        "}\n";
 
+static const char* DEFAULT_CALC_NORMAL_2D =
+       "float3 calcNormal( float3 pos, float time )\n"
+       "{\n"
+       "    float2 e = (float2)(1.0,-1.0)*0.5773*0.0005;\n"
+       "    float3 e1 = (float3)(e.x, e.y, 0.0);\n"
+       "    float3 e2 = (float3)(e.y, e.y, 0.0);\n"
+       "    float3 e3 = (float3)(e.y, e.x, 0.0);\n"
+       "    float3 e4 = (float3)(e.x, e.x, 0.0);\n"
+       "    return normalize( e1*dist( (float4)(pos + e1,time) ) + \n"
+       "                      e2*dist( (float4)(pos + e2,time) ) + \n"
+       "                      e3*dist( (float4)(pos + e3,time) ) + \n"
+       "                      e4*dist( (float4)(pos + e4,time) ) );\n"
+//       "    return normalize( e.xyy*dist( (float4)(pos + e.xyy,time) ) + \n"
+//       "                      e.yyx*dist( (float4)(pos + e.yyx,time) ) + \n"
+//       "                      e.yxy*dist( (float4)(pos + e.yxy,time) ) + \n"
+//       "                      e.xxx*dist( (float4)(pos + e.xxx,time) ) );\n"
+       //"    /*\n"
+       //"    vec3 eps = vec3( 0.0005, 0.0, 0.0 );\n"
+       //"    vec3 nor = vec3(\n"
+       //"        dist(pos+eps.xyy) - dist(pos-eps.xyy),\n"
+       //"        dist(pos+eps.yxy) - dist(pos-eps.yxy),\n"
+       //"        dist(pos+eps.yyx) - dist(pos-eps.yyx) );\n"
+       //"    return normalize(nor);\n"
+       //"    */\n"
+       "}\n";
+
+
 static const std::vector<std::tuple<std::string, Traced_Shape::VarType, bool, cl_mem_flags>>
     DEFAULT_KERNEL_PARAMETER=
                     { {"io", Traced_Shape::VarType::FLOAT3, true, CL_MEM_READ_ONLY},
@@ -192,7 +219,8 @@ static const std::vector<std::tuple<std::string, Traced_Shape::VarType, bool, cl
                       {"time", Traced_Shape::VarType::FLOAT, false, CL_MEM_READ_ONLY},
                       {"ro", Traced_Shape::VarType::FLOAT3, true, CL_MEM_WRITE_ONLY},
                       {"rd", Traced_Shape::VarType::FLOAT3, true, CL_MEM_WRITE_ONLY},
-                      {"rvalid", Traced_Shape::VarType::FLOAT, true, CL_MEM_READ_WRITE}};
+                      {"rvalid", Traced_Shape::VarType::FLOAT, true, CL_MEM_READ_WRITE},
+                      {"normal", Traced_Shape::VarType::FLOAT3, true, CL_MEM_WRITE_ONLY}};
 
 
 static const char* DEFAULT_RAY_TRACE =
@@ -203,7 +231,8 @@ static const char* DEFAULT_RAY_TRACE =
                     "              __global float* time,\n" //Time constant.
                     "              __global float3* ro,\n" //Reflected/refracted ray origin.
                     "              __global float3* rd,\n" //Reflected/refracted ray direction.
-                    "              __global float* rvalid) {\n" //Reflected/refracted ray valid.
+                    "              __global float* rvalid,\n" //Reflected/refracted ray valid.
+                    "              __global float3* normal) {\n" //Normal of reflected/refracted ray.
                     "    uint gid = get_global_id(0);\n"
                     "    if (isequal(ivalid[gid], 0.0)) {\n"
                     "        rd[gid] = (float3)(indRatio[gid], 0, 0);\n"
@@ -218,15 +247,15 @@ static const char* DEFAULT_RAY_TRACE =
                     "            rd[gid] = id[gid];\n"
                     "        } else {\n"
                     "            rvalid[gid] = 1.0;\n"
-                    "            float3 nor = calcNormal( pos, time[0]);\n"
-                    "            if (isgreater(dot(nor, id[gid]),0.0)) {\n"
-                    "                nor = -nor;\n"
+                    "            normal[gid] = calcNormal( pos, time[0]);\n"
+                    "            if (isgreater(dot(normal[gid], id[gid]),0.0)) {\n"
+                    "                normal[gid] = -normal[gid];\n"
                     "            }\n"
-                    "            bool isRefract = isRefraction(id[gid], nor, 1.0/indRatio[gid]); \n"
+                    "            bool isRefract = isRefraction(id[gid], normal[gid], 1.0/indRatio[gid]); \n"
                     "            if (isRefract) {\n"
-                    "                rd[gid] = refract(id[gid], nor, 1.0/indRatio[gid]);\n"
+                    "                rd[gid] = refract(id[gid], normal[gid], 1.0/indRatio[gid]);\n"
                     "            } else {\n"
-                    "                rd[gid] = reflect(id[gid], nor);\n"
+                    "                rd[gid] = reflect(id[gid], normal[gid]);\n"
                     "            }\n"
                     "        }\n"
                     "    }\n"
@@ -321,9 +350,9 @@ void export_clprog(const Shape_Program& shape, const Render_Opts& opts, std::ost
 void export_clprog(const Shape_Program& shape, const Rays_Program& rays, const Render_Opts& opts, std::ostream& out, std::ostream& initOut)
 {
     export_clprog(shape, opts, out);
-//    if (rays.ray_is_2d_)
-//        return export_rays_clprog_2d(rays, opts, out);
-    if (rays.ray_is_3d_)
+    //if (rays.ray_is_2d_)
+    //    return export_rays_clprog_2d(rays, opts, out);
+    //if (rays.ray_is_3d_)
         return export_rays_clprog_3d(rays, opts, initOut);
     die("export_clprog: shape is not 2d or 3d");
 }
@@ -396,7 +425,7 @@ void export_clprog_2d(const Shape_Program& shape, const Render_Opts& opts, std::
     out <<
         DEFAULT_CAST_RAY
         <<
-        DEFAULT_CALC_NORMAL
+        DEFAULT_CALC_NORMAL_2D
         <<
         DEFAULT_RAY_TRACE;
 
@@ -520,6 +549,8 @@ void Traced_Shape::setInitBuffers(std::tuple<unsigned int, unsigned int, unsigne
                       "time", VarType::FLOAT, sizeof(cl_float) * 1);
     argsData_["ic"] = MemDataAttr(std::shared_ptr<cl_float3[]>(new cl_float3[totalRays]),
                       "ic", VarType::FLOAT3, sizeof(cl_float3) * totalRays);
+    argsData_["normal"] = MemDataAttr(std::shared_ptr<cl_float3[]>(new cl_float3[totalRays]{zerofl}),
+                      "normal", VarType::FLOAT3, sizeof(cl_float3) * totalRays);
     //Write initialRays.
     unsigned int i = 0;
     for (unsigned int a=0; a< std::get<0>(numRays);a++) {
@@ -615,15 +646,20 @@ bool Traced_Shape::propagate() {
                 cl_float3 ro = std::reinterpret_pointer_cast<cl_float3[]>(argsData_["ro"].data_).get()[i];
                 //cl_float3 id = std::reinterpret_pointer_cast<cl_float3[]>(argsData_["id"].data_).get()[i];
                 cl_float3 io = std::reinterpret_pointer_cast<cl_float3[]>(argsData_["io"].data_).get()[i];
+                cl_float3 norm = std::reinterpret_pointer_cast<cl_float3[]>(argsData_["normal"].data_).get()[i];
                 rays_.push_back(Ray{glm::vec3(io.x, io.y, io.z),
                                     glm::vec3(ro.x - io.x, ro.y - io.y, ro.z - io.z),
-                                    glm::vec4(1,1,1,1), 1});
+                                    glm::vec4(0.0,0.0,1.0,1.0), 1});
                 if (!is_r_valid) {
                     rays_.push_back(Ray{glm::vec3(ro.x, ro.y, ro.z),
                                     glm::vec3(rd.x * far_away,
                                               rd.y * far_away,
                                               rd.z * far_away),
-                                    glm::vec4(1,0,0,1), 1});
+                                    glm::vec4(1.0,0.0,0.0,1.0), 1});
+                } else {
+                    rays_.push_back(Ray{glm::vec3(ro.x, ro.y, ro.z),
+                                    glm::vec3(ro.x - norm.x, ro.y - norm.y, ro.z - norm.z),
+                                    glm::vec4(0.0,1.0,0.0,1.0), 1});
                 }
             //std::cout << "io is (" << std::to_string(io.x)
             //          << ", " << std::to_string(io.y)

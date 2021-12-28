@@ -1680,7 +1680,7 @@ colour_picker =
 
 ///plane_light [plane_center ///
 ///            plane_vector1 (magnitude is half of plane size) ///
-///            plane_vector2 (magnitude is half of plane size) ///
+///            plane_vector2 (magnitude is half of plane size) not used in 2d///
 ///            density (number of rays / 2 for each axis) ///
 ///            ray_direction_vector] ///
 plane_light [_c, _v1, _v2, _s, _d] shape =
@@ -1688,9 +1688,9 @@ plane_light [_c, _v1, _v2, _s, _d] shape =
             else do assert(is_vec3(_c) && shape.is_3d) in _c;
         v1 = if (is_vec2 _v1) [..._v1, 1]
             else do assert(is_vec3(_v1) && shape.is_3d) in _v1;
-        v2 = if (is_vec2 _v2) [..._v2, 1]
+        v2 = if (shape.is_2d) [0,0,1]
             else do assert(is_vec3(_v2) && shape.is_3d) in _v2;
-        s = if (is_num _s) [..._s, 1]
+        s = if (is_list _s && count _s == 1 && is_num(_s@0)) [..._s, 1]
             else do assert(is_vec2(_s) && shape.is_3d) in _s;
         d = if (is_vec2 _d) [..._d, 1]
             else do assert(is_vec3(_d) && shape.is_3d) in _d;
