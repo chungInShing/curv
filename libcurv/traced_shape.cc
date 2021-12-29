@@ -128,7 +128,7 @@ static const char* DEFAULT_CAST_RAY =
        "//    (-1,-1,-1) means no object was hit.\n"
        "vec4 castRay( float3 ro, float3 rd, float time )\n"
        "{\n"
-       "    float tmin = 0.005;\n" // was 1.0
+       "    float tmin = 0.02;\n" // was 1.0
        "    float tmax = ray_max_depth;\n"
        "   \n"
        // TODO: implement bounding volume. If I remove the 'if(t>tmax)break'
@@ -144,7 +144,7 @@ static const char* DEFAULT_CAST_RAY =
        "    float t = tmin;\n"
        "    float3 c = (float3)(-1.0,-1.0,-1.0);\n"
        "    for (int i=0; i<ray_max_iter; i++) {\n"
-       "        float precis = 0.0005*t;\n"
+       "        float precis = 0.0002*t;\n"
        "        float4 p = (float4)(ro+rd*t,time);\n"
        "        float d = dist(p);\n"
        "        if (fabs(d) < precis) {\n"
@@ -624,6 +624,7 @@ void Traced_Shape::setInitialRays() {
     //(Re)create input and output memory objects. Free existing objects.
     //Set input memory objects with initial ray values.
     if (getNumRays() == 0) {
+#if 0
         std::vector<Ray> rays;
         rays.push_back(Ray{glm::vec3(-3.0,-1.0,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 1.5});
         rays.push_back(Ray{glm::vec3(-3.0,-0.75,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 1.5});
@@ -635,6 +636,7 @@ void Traced_Shape::setInitialRays() {
         rays.push_back(Ray{glm::vec3(-3.0,0.5,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 1.5});
         rays.push_back(Ray{glm::vec3(-3.0,0.25,0), glm::vec3(1,0,0), glm::vec4(1,1,1,10), 1.5});
         setInitialRays(rays);
+#endif
     } else {
         setInitBuffers();
         calc_init_rays_ = true;
