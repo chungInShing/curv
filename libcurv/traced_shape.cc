@@ -126,7 +126,7 @@ static const char* DEFAULT_CAST_RAY =
        "//  * t is the distance that we marched,\n"
        "//  * r,g,b is the colour of the distance field at the point we ended up at.\n"
        "//    (-1,-1,-1) means no object was hit.\n"
-       "vec4 castRay( float3 ro, float3 rd, float time )\n"
+       "vec4 castRay( float3 ro, float3 rd, float time, float isinside)\n"
        "{\n"
        "    float tmin = 0.02;\n" // was 1.0
        "    float tmax = ray_max_depth;\n"
@@ -144,10 +144,13 @@ static const char* DEFAULT_CAST_RAY =
        "    float t = tmin;\n"
        "    float3 c = (float3)(-1.0,-1.0,-1.0);\n"
        "    for (int i=0; i<ray_max_iter; i++) {\n"
-       "        float precis = 0.0002*t;\n"
+       "        float precis = 0.00001*t;\n"
        "        float4 p = (float4)(ro+rd*t,time);\n"
        "        float d = dist(p);\n"
-       "        if (fabs(d) < precis) {\n"
+       "        if (isinside > 0) {\n"
+       "            d = -d;\n"
+       "        }\n"
+       "        if (d < precis) {\n"
        "            c = colour(p);\n"
        "            break;\n"
        "        }\n"
@@ -218,6 +221,19 @@ static const char* DEFAULT_CALC_NORMAL_2D =
        //"    */\n"
        "}\n";
 
+static const char* DEFAULT_IS_INSIDE =
+        "int isInside(float3 pos, float3 dir)\n"
+        "{\n"
+       "    float tmin = 0.02;\n" // was 1.0
+       "   \n"
+       "    float4 p = (float4)(pos+dir*tmin, 0.0);\n"
+       "    float d = dist(p);\n"
+       "    if (isgreater(d, 0.0)) {\n"
+       "        return 0;\n"
+       "    } else {\n"
+       "        return 1;\n"
+       "    }\n"
+       "}\n";
 
 static const std::vector<std::tuple<std::string, Traced_Shape::VarType, bool, cl_mem_flags>>
     DEFAULT_KERNEL_PARAMETER=
@@ -229,7 +245,8 @@ static const std::vector<std::tuple<std::string, Traced_Shape::VarType, bool, cl
                       {"ro", Traced_Shape::VarType::FLOAT3, true, CL_MEM_WRITE_ONLY},
                       {"rd", Traced_Shape::VarType::FLOAT3, true, CL_MEM_WRITE_ONLY},
                       {"rvalid", Traced_Shape::VarType::INT, true, CL_MEM_READ_WRITE},
-                      {"normal", Traced_Shape::VarType::FLOAT3, true, CL_MEM_WRITE_ONLY}};
+                      {"normal", Traced_Shape::VarType::FLOAT3, true, CL_MEM_WRITE_ONLY},
+                      {"isinside", Traced_Shape::VarType::INT, true, CL_MEM_READ_WRITE}};
 
 
 static const char* DEFAULT_RAY_TRACE =
@@ -241,15 +258,17 @@ static const char* DEFAULT_RAY_TRACE =
                     "              __global float3* ro,\n" //Reflected/refracted ray origin.
                     "              __global float3* rd,\n" //Reflected/refracted ray direction.
                     "              __global int* rvalid,\n" //Reflected/refracted ray valid.
-                    "              __global float3* normal) {\n" //Normal of reflected/refracted ray.
+                    "              __global float3* normal,\n" //Normal of reflected/refracted ray.
+                    "              __global int* isinside) {\n" //Is incident ray from inside of the solid.
                     "    uint gid = get_global_id(0);\n"
                     "    if (ivalid[gid] == 0) {\n"
-                    "        rd[gid] = (float3)(indRatio[gid], 0, 0);\n"
+                    "        rd[gid] = (float3)(0, 0, 0);\n"
                     "        ro[gid] = (float3)(0, 0, 0);\n"
                     "        rvalid[gid] = 0;\n"
                     "        normal[gid] = (float3)(0.0, 0.0, 0.0);\n"
                     "    } else {\n"
-                    "        float4 cast = castRay(io[gid], id[gid], time[0]);\n" //Get ray propagation distance.
+                    "        isinside[gid] = isInside(io[gid], id[gid]);\n"
+                    "        float4 cast = castRay(io[gid], id[gid], time[0], (float)(isinside[gid]));\n" //Get ray propagation distance.
                     "        float3 pos = io[gid] + cast.x * id[gid];\n"
                     "        ro[gid] = pos;\n"
                     "        if (isequal(cast.y, -1.0) &&\n"
@@ -264,9 +283,14 @@ static const char* DEFAULT_RAY_TRACE =
                     "            if (isgreater(dot(norm, id[gid]),0.0)) {\n"
                     "                norm = -norm;\n"
                     "            }\n"
-                    "            bool isRefract = isRefraction(id[gid], norm, 1.0/indRatio[gid]); \n"
+                    "            float ind = indRatio[gid];\n"
+                    "            isinside[gid] = isInside(io[gid], id[gid]);\n"
+                    "            if (isinside[gid] == 0) {\n"
+                    "                ind = 1.0 / indRatio[gid];\n"
+                    "            }\n"
+                    "            bool isRefract = isRefraction(id[gid], norm, ind); \n"
                     "            if (isRefract) {\n"
-                    "                rd[gid] = refract(id[gid], norm, 1.0/indRatio[gid]);\n"
+                    "                rd[gid] = refract(id[gid], norm, ind);\n"
                     "            } else {\n"
                     "                rd[gid] = reflect(id[gid], norm);\n"
                     "            }\n"
@@ -439,6 +463,8 @@ void export_clprog_2d(const Shape_Program& shape, const Render_Opts& opts, std::
     out <<
         DEFAULT_CAST_RAY
         <<
+        DEFAULT_IS_INSIDE
+        <<
         DEFAULT_CALC_NORMAL_2D
         <<
         DEFAULT_RAY_TRACE;
@@ -489,6 +515,8 @@ void export_clprog_3d(const Shape_Program& shape, const Render_Opts& opts, std::
 
     out <<
         DEFAULT_CAST_RAY
+        <<
+        DEFAULT_IS_INSIDE
         <<
         DEFAULT_CALC_NORMAL
         <<
@@ -565,6 +593,8 @@ void Traced_Shape::setInitBuffers(std::tuple<unsigned int, unsigned int, unsigne
                       "ic", VarType::FLOAT3, sizeof(cl_float3) * totalRays);
     argsData_["normal"] = MemDataAttr(std::shared_ptr<cl_float3[]>(new cl_float3[totalRays]{zerofl}),
                       "normal", VarType::FLOAT3, sizeof(cl_float3) * totalRays);
+    argsData_["isinside"] = MemDataAttr(std::shared_ptr<cl_int[]>(new cl_int[totalRays]{0}),
+                      "isinside", VarType::INT, sizeof(cl_int) * totalRays);
     //Write initialRays.
     unsigned int i = 0;
     for (unsigned int a=0; a< std::get<0>(numRays);a++) {
@@ -579,6 +609,7 @@ void Traced_Shape::setInitBuffers(std::tuple<unsigned int, unsigned int, unsigne
                         (float)c/fmax(1.0, (float)(std::get<2>(numRays) - 1));
                 std::reinterpret_pointer_cast<cl_int[]>(argsData_["ivalid"].data_).get()[i] = 1;
                 std::reinterpret_pointer_cast<cl_int[]>(argsData_["rvalid"].data_).get()[i] = 0;
+                std::reinterpret_pointer_cast<cl_int[]>(argsData_["isinside"].data_).get()[i] = 0;
                 i++;
             }
         }
@@ -658,6 +689,8 @@ bool Traced_Shape::propagate() {
             //Reflected ray is valid?
             bool is_r_valid = (std::reinterpret_pointer_cast<cl_int[]>(argsData_["rvalid"].data_).get()[i] == 1);
             no_valid_rrays &= !is_r_valid;
+            //Is the incident ray from inside the solid.
+            bool is_inside = (std::reinterpret_pointer_cast<cl_int[]>(argsData_["isinside"].data_).get()[i] == 1);
 
             cl_float3 rd = std::reinterpret_pointer_cast<cl_float3[]>(argsData_["rd"].data_).get()[i];
             cl_float3 ro = std::reinterpret_pointer_cast<cl_float3[]>(argsData_["ro"].data_).get()[i];
@@ -667,6 +700,7 @@ bool Traced_Shape::propagate() {
             cl_float3 id = std::reinterpret_pointer_cast<cl_float3[]>(argsData_["id"].data_).get()[i];
             std::cout << "i is " << std::to_string(i) << std::endl;
             std::cout << "ivalid is " << std::to_string(is_i_valid) << ", rvalid is " << std::to_string(is_r_valid) << std::endl;
+            std::cout << "isinside is " << std::to_string(is_inside) << std::endl;
             std::cout << "io is (" << std::to_string(io.x)
                       << ", " << std::to_string(io.y)
                       << ", " << std::to_string(io.z)
@@ -691,9 +725,15 @@ bool Traced_Shape::propagate() {
 #endif
             //Add valid reflected rays to result.
             if (is_i_valid) {
+                glm::vec4 col;
+                if (is_inside) {
+                    col = glm::vec4(0.0,0.0,1.0,1.0);
+                } else {
+                    col = glm::vec4(0.0,1.0,1.0,1.0);
+                }
                 rays_.push_back(Ray{glm::vec3(io.x, io.y, io.z),
                                     glm::vec3(ro.x - io.x, ro.y - io.y, ro.z - io.z),
-                                    glm::vec4(0.0,0.0,1.0,1.0), 1});
+                                    col, 1});
                 if (!is_r_valid) {
                     rays_.push_back(Ray{glm::vec3(ro.x, ro.y, ro.z),
                                     glm::vec3(rd.x * far_away,
@@ -705,11 +745,6 @@ bool Traced_Shape::propagate() {
                                     glm::vec3(norm.x * 0.1, norm.y * 0.1, norm.z * 0.1),
                                     glm::vec4(0.0,1.0,0.0,1), 1});
                 }
-            }
-            if (is_i_valid && is_r_valid) {
-                //Flip reflection index for next round.
-                std::reinterpret_pointer_cast<cl_float[]>(argsData_["indRatio"].data_).get()[i] =
-                        1 / std::reinterpret_pointer_cast<cl_float[]>(argsData_["indRatio"].data_).get()[i];
             }
         }
         //check if propagation is finished, update finished_ if neccessary.
